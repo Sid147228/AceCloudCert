@@ -1,16 +1,28 @@
-import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import BottomTabNavigator from './src/navigation/BottomTabNavigator';
-import { SafeAreaView, View } from 'react-native';
-
-export default function App() {
-  return (
-    <NavigationContainer>
-      <SafeAreaView style={{ flex: 1 }}>
-        <View style={{ flex: 1 }}>
-          <BottomTabNavigator />
-        </View>
-      </SafeAreaView>
-    </NavigationContainer>
-  );
+{
+  "expo": {
+    "name": "AceCloudCert",
+    "slug": "acecloudcert",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "android": {
+      "package": "com.acecloudcert.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "1be1550d-f39a-479d-8bdb-644532f35410"
+      }
+    }
+  }
 }
