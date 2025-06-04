@@ -1,0 +1,15 @@
+{
+  "name": "frontend",
+  "version": "1.0.0",
+  "description": "Frontend for AceCloudCert",
+  "main": "index.js",
+  "dependencies": {
+    "react": "^18.2.0",
+    "next": "^13.1.6"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  }
+}
