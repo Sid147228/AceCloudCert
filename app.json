@@ -17,6 +17,8 @@
       "package": "com.acecloudcert.app"
     },
     "web": {
+      "bundler": "metro",
+      "output": "static",
       "favicon": "./assets/favicon.png"
     },
     "extra": {
