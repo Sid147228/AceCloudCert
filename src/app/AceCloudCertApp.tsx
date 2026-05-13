@@ -3,14 +3,16 @@ import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AppCard, FeatureCard, StatCard } from '@/components/cards';
 import { DomainProgressList } from '@/components/charts';
-import { InputField, PasswordField } from '@/components/forms';
 import { AppShell, SectionHeader } from '@/components/layout';
-import { Badge, EmptyState, PrimaryButton, ProgressBar, SecondaryButton, Table, Tabs, ToastNotification } from '@/components/ui';
+import { Badge, EmptyState, LoadingState, PrimaryButton, ProgressBar, SecondaryButton, Table, Tabs, ToastNotification } from '@/components/ui';
 import type { TableColumn } from '@/components/ui';
-import { APP_NAME, DEFAULT_CERTIFICATION_ID, DEFAULT_USER_ID, PASS_MARK_PERCENT } from '@/constants/app';
+import { APP_NAME, DEFAULT_CERTIFICATION_ID, PASS_MARK_PERCENT } from '@/constants/app';
 import { APP_ROUTES } from '@/constants/routes';
 import { theme } from '@/constants/theme';
+import { AuthProvider, useAuth } from '@/context';
 import { certifications, knowledgeTopics, legalPages, questionBank, subscriptionPlans } from '@/data';
+import { EmailVerificationNotice, ForgotPasswordForm, LoginForm, SignupForm } from '@/features/auth/components';
+import type { AuthUser } from '@/features/auth';
 import { ROUTE_LABELS, ROUTE_META, getBreadcrumbs, getNavigationRoute, isProtectedRoute } from '@/app/navigation';
 import { featureModules } from '@/features';
 import { useAppNavigation } from '@/hooks';
@@ -18,13 +20,6 @@ import { getAvailableFeatures } from '@/lib';
 import { serviceReadiness } from '@/services';
 import type { AppRoute, LegalPage, ServiceReadinessItem, UserProfile } from '@/types';
 import { calculateReadinessScore, countQuestionsByDomain, formatCount, formatPercent } from '@/utils';
-
-const localUser: UserProfile = {
-  id: DEFAULT_USER_ID,
-  name: 'AceCloudCert Learner',
-  email: 'learner@acecloudcert.com',
-  plan: 'Free'
-};
 
 const authEntryRoutes = new Set<AppRoute>([APP_ROUTES.login, APP_ROUTES.signup, APP_ROUTES.forgotPassword]);
 
@@ -50,27 +45,33 @@ const serviceColumns: readonly TableColumn<ServiceReadinessItem>[] = [
 ];
 
 export default function AceCloudCertApp() {
+  return (
+    <AuthProvider>
+      <AceCloudCertRoutes />
+    </AuthProvider>
+  );
+}
+
+function AceCloudCertRoutes() {
   const { activeRoute, navigate: setActiveRoute } = useAppNavigation(APP_ROUTES.landing);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const { isAuthenticated, isInitializing, logout, status, user } = useAuth();
   const [redirectAfterLogin, setRedirectAfterLogin] = useState<AppRoute>(APP_ROUTES.dashboard);
-  const [email, setEmail] = useState(localUser.email);
-  const [password, setPassword] = useState('password123');
-  const [fullName, setFullName] = useState(localUser.name);
   const [activeTestTab, setActiveTestTab] = useState('overview');
 
   const domainCounts = useMemo(() => countQuestionsByDomain(questionBank), []);
   const availableFeatures = useMemo(() => getAvailableFeatures(featureModules), []);
+  const userProfile = user ? toUserProfile(user) : null;
   const activeMenuRoute =
     isAuthenticated && !isProtectedRoute(activeRoute) ? getAuthenticatedPublicMenuRoute(activeRoute) : getNavigationRoute(activeRoute);
 
   function navigate(route: AppRoute) {
     if (!isAuthenticated && isProtectedRoute(route)) {
       setRedirectAfterLogin(route);
-      setActiveRoute(APP_ROUTES.login);
+      setActiveRoute(status === 'verification-required' ? APP_ROUTES.emailVerification : APP_ROUTES.login);
       return;
     }
 
-    if (isAuthenticated && authEntryRoutes.has(route)) {
+    if (isAuthenticated && (authEntryRoutes.has(route) || route === APP_ROUTES.emailVerification)) {
       setActiveRoute(APP_ROUTES.dashboard);
       return;
     }
@@ -78,13 +79,41 @@ export default function AceCloudCertApp() {
     setActiveRoute(route);
   }
 
-  function login() {
-    setIsAuthenticated(true);
+  function completeAuthFlow(authUser: AuthUser) {
+    setActiveRoute(authUser.emailVerified ? redirectAfterLogin : APP_ROUTES.emailVerification);
+  }
+
+  function completeVerification() {
     setActiveRoute(redirectAfterLogin);
   }
 
-  function logout() {
-    setIsAuthenticated(false);
+  function handleLogout() {
+    void logout().finally(() => {
+      setRedirectAfterLogin(APP_ROUTES.dashboard);
+      setActiveRoute(APP_ROUTES.landing);
+    });
+  }
+
+  function showProtectedFallback() {
+    return <LoadingState message="Preparing your secure workspace..." />;
+  }
+
+  if (isInitializing) {
+    return (
+      <AppShell
+        activeMenuRoute={APP_ROUTES.landing}
+        activeRoute={APP_ROUTES.landing}
+        isAuthenticated={false}
+        navigate={navigate}
+        onLogout={handleLogout}
+        routeLabels={ROUTE_LABELS}
+      >
+        <LoadingState message="Restoring your AceCloudCert session..." />
+      </AppShell>
+    );
+  }
+
+  function resetAfterLogout() {
     setRedirectAfterLogin(APP_ROUTES.dashboard);
     setActiveRoute(APP_ROUTES.landing);
   }
@@ -95,27 +124,33 @@ export default function AceCloudCertApp() {
       activeRoute={activeRoute}
       isAuthenticated={isAuthenticated}
       navigate={navigate}
-      onLogout={logout}
+      onLogout={handleLogout}
       routeLabels={ROUTE_LABELS}
     >
       {activeRoute !== APP_ROUTES.landing ? <RouteHeading navigate={navigate} route={activeRoute} /> : null}
       {activeRoute === APP_ROUTES.landing ? (
         <LandingPage isAuthenticated={isAuthenticated} navigate={navigate} />
       ) : activeRoute === APP_ROUTES.login ? (
-        <LoginPage email={email} onLogin={login} password={password} setEmail={setEmail} setPassword={setPassword} navigate={navigate} />
+        <LoginForm
+          onForgotPassword={() => navigate(APP_ROUTES.forgotPassword)}
+          onLoginComplete={completeAuthFlow}
+          onSignup={() => navigate(APP_ROUTES.signup)}
+        />
       ) : activeRoute === APP_ROUTES.signup ? (
-        <SignupPage
-          email={email}
-          fullName={fullName}
-          onSignup={login}
-          password={password}
-          setEmail={setEmail}
-          setFullName={setFullName}
-          setPassword={setPassword}
-          navigate={navigate}
+        <SignupForm
+          onLogin={() => navigate(APP_ROUTES.login)}
+          onPrivacy={() => navigate(APP_ROUTES.privacyPolicy)}
+          onSignupComplete={completeAuthFlow}
+          onTerms={() => navigate(APP_ROUTES.terms)}
         />
       ) : activeRoute === APP_ROUTES.forgotPassword ? (
-        <ForgotPasswordPage email={email} setEmail={setEmail} navigate={navigate} />
+        <ForgotPasswordForm onBackToLogin={() => navigate(APP_ROUTES.login)} />
+      ) : activeRoute === APP_ROUTES.emailVerification ? (
+        <EmailVerificationNotice
+          onBackToSignup={() => navigate(APP_ROUTES.signup)}
+          onLogoutComplete={resetAfterLogout}
+          onVerified={completeVerification}
+        />
       ) : activeRoute === APP_ROUTES.pricing ? (
         <PricingPage isAuthenticated={isAuthenticated} navigate={navigate} />
       ) : activeRoute === APP_ROUTES.privacyPolicy ? (
@@ -123,7 +158,11 @@ export default function AceCloudCertApp() {
       ) : activeRoute === APP_ROUTES.terms ? (
         <LegalPageContent legalPageId="terms" />
       ) : activeRoute === APP_ROUTES.dashboard ? (
-        <DashboardPage availableFeatureCount={availableFeatures.length} domainCounts={domainCounts} navigate={navigate} user={localUser} />
+        userProfile ? (
+          <DashboardPage availableFeatureCount={availableFeatures.length} domainCounts={domainCounts} navigate={navigate} user={userProfile} />
+        ) : (
+          showProtectedFallback()
+        )
       ) : activeRoute === APP_ROUTES.certifications ? (
         <CertificationsPage navigate={navigate} />
       ) : activeRoute === APP_ROUTES.certificationDetail ? (
@@ -145,9 +184,9 @@ export default function AceCloudCertApp() {
       ) : activeRoute === APP_ROUTES.certificates ? (
         <CertificatesPage navigate={navigate} />
       ) : activeRoute === APP_ROUTES.certificateDetail ? (
-        <CertificateDetailPage navigate={navigate} />
+        userProfile ? <CertificateDetailPage navigate={navigate} user={userProfile} /> : showProtectedFallback()
       ) : activeRoute === APP_ROUTES.profile ? (
-        <ProfilePage navigate={navigate} onLogout={logout} user={localUser} />
+        userProfile ? <ProfilePage navigate={navigate} onLogout={handleLogout} user={userProfile} /> : showProtectedFallback()
       ) : activeRoute === APP_ROUTES.settings ? (
         <SettingsPage navigate={navigate} />
       ) : activeRoute === APP_ROUTES.subscription ? (
@@ -200,6 +239,15 @@ function getAuthenticatedPublicMenuRoute(route: AppRoute) {
   return APP_ROUTES.dashboard;
 }
 
+function toUserProfile(authUser: AuthUser): UserProfile {
+  return {
+    email: authUser.email,
+    id: authUser.id,
+    name: authUser.fullName,
+    plan: authUser.plan
+  };
+}
+
 function LandingPage({ isAuthenticated, navigate }: NavigationProps & { isAuthenticated: boolean }) {
   return (
     <>
@@ -248,79 +296,6 @@ function LandingPage({ isAuthenticated, navigate }: NavigationProps & { isAuthen
         />
       </View>
     </>
-  );
-}
-
-type AuthPageProps = NavigationProps & {
-  email: string;
-  password: string;
-  setEmail: (value: string) => void;
-  setPassword: (value: string) => void;
-};
-
-function LoginPage({ email, navigate, onLogin, password, setEmail, setPassword }: AuthPageProps & { onLogin: () => void }) {
-  return (
-    <CenteredForm>
-      <AppCard style={styles.formCard}>
-        <Badge tone="info">Public route</Badge>
-        <InputField label="Email" onChangeText={setEmail} value={email} />
-        <PasswordField label="Password" onChangeText={setPassword} value={password} />
-        <PrimaryButton onPress={onLogin}>Login to workspace</PrimaryButton>
-        <View style={styles.inlineActions}>
-          <SecondaryButton onPress={() => navigate(APP_ROUTES.signup)}>Create account</SecondaryButton>
-          <SecondaryButton onPress={() => navigate(APP_ROUTES.forgotPassword)}>Forgot password</SecondaryButton>
-        </View>
-      </AppCard>
-    </CenteredForm>
-  );
-}
-
-function SignupPage({
-  email,
-  fullName,
-  navigate,
-  onSignup,
-  password,
-  setEmail,
-  setFullName,
-  setPassword
-}: AuthPageProps & {
-  fullName: string;
-  onSignup: () => void;
-  setFullName: (value: string) => void;
-}) {
-  return (
-    <CenteredForm>
-      <AppCard style={styles.formCard}>
-        <Badge tone="info">Public route</Badge>
-        <InputField label="Full name" onChangeText={setFullName} value={fullName} />
-        <InputField label="Email" onChangeText={setEmail} value={email} />
-        <PasswordField label="Password" onChangeText={setPassword} value={password} />
-        <PasswordField label="Confirm password" onChangeText={setPassword} value={password} />
-        <Text style={styles.copy}>
-          By creating an account, the learner accepts the Privacy Policy and Terms and Conditions routes.
-        </Text>
-        <PrimaryButton onPress={onSignup}>Create account</PrimaryButton>
-        <View style={styles.inlineActions}>
-          <SecondaryButton onPress={() => navigate(APP_ROUTES.login)}>Already have an account</SecondaryButton>
-          <SecondaryButton onPress={() => navigate(APP_ROUTES.terms)}>Review terms</SecondaryButton>
-        </View>
-      </AppCard>
-    </CenteredForm>
-  );
-}
-
-function ForgotPasswordPage({ email, navigate, setEmail }: NavigationProps & { email: string; setEmail: (value: string) => void }) {
-  return (
-    <CenteredForm>
-      <AppCard style={styles.formCard}>
-        <Badge tone="info">Public route</Badge>
-        <InputField label="Email" onChangeText={setEmail} value={email} />
-        <Text style={styles.copy}>This route is prepared for Firebase password reset. The button returns to login for now.</Text>
-        <PrimaryButton onPress={() => navigate(APP_ROUTES.login)}>Send reset link</PrimaryButton>
-        <SecondaryButton onPress={() => navigate(APP_ROUTES.login)}>Back to login</SecondaryButton>
-      </AppCard>
-    </CenteredForm>
   );
 }
 
@@ -640,13 +615,13 @@ function CertificatesPage({ navigate }: NavigationProps) {
   );
 }
 
-function CertificateDetailPage({ navigate }: NavigationProps) {
+function CertificateDetailPage({ navigate, user }: NavigationProps & { user: UserProfile }) {
   return (
     <Section eyebrow="Certificate" subtitle="Certificate detail route prepared for export and sharing integrations." title="Certificate preview">
       <AppCard style={styles.certificatePreview}>
         <Text style={styles.certificateBrand}>{APP_NAME}</Text>
         <Text style={styles.certificateTitle}>Certificate of Completion</Text>
-        <Text style={styles.copy}>Awarded to {localUser.name}</Text>
+        <Text style={styles.copy}>Awarded to {user.name}</Text>
         <Text style={styles.cardTitle}>AWS Certified Cloud Practitioner Practice Exam</Text>
         <Text style={styles.copy}>Score: 82% | Certificate ID: ACC-AWS-CCP-SAMPLE</Text>
       </AppCard>
@@ -725,10 +700,6 @@ function RouteCard({ badge, copy, onPress, title }: RouteCardProps) {
   );
 }
 
-function CenteredForm({ children }: { children: ReactNode }) {
-  return <View style={styles.centeredForm}>{children}</View>;
-}
-
 type SectionProps = {
   children: ReactNode;
   eyebrow: string;
@@ -787,11 +758,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     lineHeight: 22
   },
-  centeredForm: {
-    alignSelf: 'center',
-    maxWidth: 560,
-    width: '100%'
-  },
   certificateBrand: {
     color: theme.colors.primary,
     fontSize: 18,
@@ -822,9 +788,6 @@ const styles = StyleSheet.create({
     flexBasis: 250,
     flexGrow: 1
   },
-  formCard: {
-    gap: theme.spacing.md
-  },
   hero: {
     gap: theme.spacing.md,
     padding: theme.spacing.xl
@@ -840,12 +803,6 @@ const styles = StyleSheet.create({
     fontSize: 44,
     fontWeight: '900',
     lineHeight: 50
-  },
-  inlineActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: theme.spacing.sm
   },
   landingHero: {
     gap: theme.spacing.lg,

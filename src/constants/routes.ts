@@ -3,6 +3,7 @@ export const APP_ROUTES = {
   login: 'login',
   signup: 'signup',
   forgotPassword: 'forgot-password',
+  emailVerification: 'email-verification',
   pricing: 'pricing',
   privacyPolicy: 'privacy-policy',
   terms: 'terms-and-conditions',
@@ -29,6 +30,7 @@ export const PUBLIC_ROUTES = [
   APP_ROUTES.login,
   APP_ROUTES.signup,
   APP_ROUTES.forgotPassword,
+  APP_ROUTES.emailVerification,
   APP_ROUTES.pricing,
   APP_ROUTES.privacyPolicy,
   APP_ROUTES.terms

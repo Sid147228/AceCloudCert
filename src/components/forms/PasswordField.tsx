@@ -3,19 +3,22 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { theme } from '@/constants/theme';
 
 type PasswordFieldProps = {
+  disabled?: boolean;
+  error?: string;
   label: string;
   onChangeText: (value: string) => void;
   value: string;
 };
 
-export function PasswordField({ label, onChangeText, value }: PasswordFieldProps) {
+export function PasswordField({ disabled = false, error, label, onChangeText, value }: PasswordFieldProps) {
   const [visible, setVisible] = useState(false);
 
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
-      <View style={styles.passwordRow}>
+      <View style={[styles.passwordRow, Boolean(error) && styles.inputError, disabled && styles.disabled]}>
         <TextInput
+          editable={!disabled}
           onChangeText={onChangeText}
           placeholder={label}
           placeholderTextColor={theme.colors.textMuted}
@@ -23,17 +26,29 @@ export function PasswordField({ label, onChangeText, value }: PasswordFieldProps
           style={styles.passwordInput}
           value={value}
         />
-        <Pressable onPress={() => setVisible((current) => !current)} style={styles.toggle}>
+        <Pressable disabled={disabled} onPress={() => setVisible((current) => !current)} style={styles.toggle}>
           <Text style={styles.toggleText}>{visible ? 'Hide' : 'Show'}</Text>
         </Pressable>
       </View>
+      {error ? <Text style={styles.error}>{error}</Text> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  disabled: {
+    opacity: 0.62
+  },
+  error: {
+    color: theme.colors.danger,
+    fontSize: 12,
+    fontWeight: '800'
+  },
   field: {
     gap: theme.spacing.xs
+  },
+  inputError: {
+    borderColor: theme.colors.danger
   },
   label: {
     color: theme.colors.text,

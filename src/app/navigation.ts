@@ -44,6 +44,12 @@ export const ROUTE_META: Record<AppRoute, RouteMeta> = {
     title: 'Forgot Password',
     subtitle: 'Reset access to your account.'
   },
+  [APP_ROUTES.emailVerification]: {
+    access: 'public',
+    parent: APP_ROUTES.signup,
+    title: 'Verify Email',
+    subtitle: 'Confirm your email address before opening protected learning routes.'
+  },
   [APP_ROUTES.pricing]: {
     access: 'public',
     parent: APP_ROUTES.landing,
@@ -164,6 +170,7 @@ export const ROUTE_LABELS: Record<AppRoute, string> = {
   [APP_ROUTES.login]: 'Login',
   [APP_ROUTES.signup]: 'Signup',
   [APP_ROUTES.forgotPassword]: 'Forgot Password',
+  [APP_ROUTES.emailVerification]: 'Verify Email',
   [APP_ROUTES.pricing]: 'Pricing',
   [APP_ROUTES.privacyPolicy]: 'Privacy',
   [APP_ROUTES.terms]: 'Terms',

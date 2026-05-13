@@ -1,9 +1,5 @@
-import type { AttemptSummary, UserPlan, UserProfile } from '@/types';
-
-export type AuthService = {
-  getCurrentUser: () => Promise<UserProfile | null>;
-  signOut: () => Promise<void>;
-};
+import type { AttemptSummary, UserPlan } from '@/types';
+export type { AuthService } from '@/features/auth/types';
 
 export type ProgressService = {
   listAttempts: (userId: string) => Promise<readonly AttemptSummary[]>;
