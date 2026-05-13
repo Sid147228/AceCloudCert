@@ -1,22 +1,22 @@
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { theme } from '@/constants/theme';
 
-type FormFieldProps = {
+export type InputFieldProps = {
   label: string;
   onChangeText: (value: string) => void;
-  secureTextEntry?: boolean;
+  placeholder?: string;
   value: string;
 };
 
-export function FormField({ label, onChangeText, secureTextEntry = false, value }: FormFieldProps) {
+export function InputField({ label, onChangeText, placeholder = label, value }: InputFieldProps) {
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
+        autoCapitalize="none"
         onChangeText={onChangeText}
-        placeholder={label}
+        placeholder={placeholder}
         placeholderTextColor={theme.colors.textMuted}
-        secureTextEntry={secureTextEntry}
         style={styles.input}
         value={value}
       />

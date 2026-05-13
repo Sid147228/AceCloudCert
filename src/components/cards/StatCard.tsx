@@ -1,16 +1,16 @@
 import { StyleSheet, Text } from 'react-native';
-import { theme } from '@/constants/theme';
 import { AppCard } from './AppCard';
+import { theme } from '@/constants/theme';
 
-type MetricCardProps = {
+type StatCardProps = {
   label: string;
   value: string | number;
 };
 
-export function MetricCard({ label, value }: MetricCardProps) {
+export function StatCard({ label, value }: StatCardProps) {
   return (
     <AppCard style={styles.card}>
-      <Text style={styles.value}>{value}</Text>
+      <Text numberOfLines={2} style={styles.value}>{value}</Text>
       <Text style={styles.label}>{label}</Text>
     </AppCard>
   );

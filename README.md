@@ -25,3 +25,15 @@ npm start
 ```
 
 The current phase is foundation-only: it keeps the app running while establishing the structure needed for feature-by-feature rebuild work.
+
+## Design System
+
+The product now uses an AceCloudCert design system with official logo usage, dark enterprise SaaS colors, mobile-first layout, reusable navigation, state components, form controls, cards, tabs, tables, and notification primitives.
+
+Core components live under:
+
+- `src/components/layout`
+- `src/components/ui`
+- `src/components/cards`
+- `src/components/forms`
+- `src/components/charts`

@@ -1,3 +1,3 @@
 export { AppCard } from './AppCard';
 export { FeatureCard } from './FeatureCard';
-export { MetricCard } from './MetricCard';
+export { StatCard } from './StatCard';

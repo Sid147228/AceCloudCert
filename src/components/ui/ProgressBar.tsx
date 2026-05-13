@@ -24,7 +24,7 @@ const styles = StyleSheet.create({
     height: '100%'
   },
   track: {
-    backgroundColor: '#1F2937',
+    backgroundColor: theme.colors.cardMuted,
     borderRadius: theme.radii.md,
     height: 8,
     overflow: 'hidden'

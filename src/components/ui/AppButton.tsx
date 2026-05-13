@@ -6,10 +6,11 @@ type AppButtonProps = {
   children: ReactNode;
   disabled?: boolean;
   onPress?: () => void;
-  variant?: 'primary' | 'secondary' | 'ghost';
+  size?: 'sm' | 'md';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
 };
 
-export function AppButton({ children, disabled = false, onPress, variant = 'primary' }: AppButtonProps) {
+export function AppButton({ children, disabled = false, onPress, size = 'md', variant = 'primary' }: AppButtonProps) {
   return (
     <Pressable
       accessibilityRole="button"
@@ -17,15 +18,27 @@ export function AppButton({ children, disabled = false, onPress, variant = 'prim
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
+        size === 'sm' && styles.small,
         variant === 'secondary' && styles.secondary,
         variant === 'ghost' && styles.ghost,
+        variant === 'danger' && styles.danger,
         disabled && styles.disabled,
         pressed && !disabled && styles.pressed
       ]}
     >
-      <Text style={[styles.label, variant !== 'primary' && styles.lightLabel]}>{children}</Text>
+      <Text style={[styles.label, variant !== 'primary' && styles.lightLabel, variant === 'danger' && styles.dangerLabel]}>
+        {children}
+      </Text>
     </Pressable>
   );
+}
+
+export function PrimaryButton(props: Omit<AppButtonProps, 'variant'>) {
+  return <AppButton {...props} variant="primary" />;
+}
+
+export function SecondaryButton(props: Omit<AppButtonProps, 'variant'>) {
+  return <AppButton {...props} variant="secondary" />;
 }
 
 const styles = StyleSheet.create({
@@ -52,6 +65,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900'
   },
+  danger: {
+    backgroundColor: theme.colors.danger,
+    borderColor: theme.colors.danger
+  },
+  dangerLabel: {
+    color: theme.colors.text
+  },
   lightLabel: {
     color: theme.colors.text
   },
@@ -61,5 +81,10 @@ const styles = StyleSheet.create({
   secondary: {
     backgroundColor: theme.colors.cardMuted,
     borderColor: theme.colors.border
+  },
+  small: {
+    minHeight: 36,
+    paddingHorizontal: 12,
+    paddingVertical: 8
   }
 });

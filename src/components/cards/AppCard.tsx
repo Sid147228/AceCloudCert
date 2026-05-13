@@ -19,6 +19,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radii.md,
     borderWidth: 1,
     gap: theme.spacing.sm,
-    padding: theme.spacing.md
+    padding: theme.spacing.md,
+    ...theme.shadows.card
   }
 });

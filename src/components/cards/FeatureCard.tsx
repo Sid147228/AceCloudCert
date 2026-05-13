@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { theme } from '@/constants/theme';
+import { Badge } from '@/components/ui';
 import type { FeatureModule } from '@/types';
 
 type FeatureCardProps = {
@@ -12,7 +13,9 @@ export function FeatureCard({ feature, onPress }: FeatureCardProps) {
     <Pressable onPress={onPress} style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
       <View style={styles.header}>
         <Text style={styles.title}>{feature.name}</Text>
-        <Text style={[styles.status, feature.status === 'planned' && styles.planned]}>{feature.status}</Text>
+        <Badge tone={feature.status === 'available' ? 'success' : feature.status === 'planned' ? 'neutral' : 'info'}>
+          {feature.status}
+        </Badge>
       </View>
       <Text style={styles.summary}>{feature.summary}</Text>
       <Text style={styles.domain}>{feature.ownerDomain}</Text>
@@ -29,7 +32,8 @@ const styles = StyleSheet.create({
     flexBasis: 230,
     flexGrow: 1,
     gap: theme.spacing.sm,
-    padding: theme.spacing.md
+    padding: theme.spacing.md,
+    ...theme.shadows.card
   },
   domain: {
     color: theme.colors.primarySoft,
@@ -42,17 +46,8 @@ const styles = StyleSheet.create({
     gap: theme.spacing.sm,
     justifyContent: 'space-between'
   },
-  planned: {
-    color: theme.colors.textMuted
-  },
   pressed: {
     opacity: 0.78
-  },
-  status: {
-    color: theme.colors.success,
-    fontSize: 12,
-    fontWeight: '900',
-    textTransform: 'uppercase'
   },
   summary: {
     color: theme.colors.textMuted,

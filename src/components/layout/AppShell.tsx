@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react';
-import { Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import logo from '../../../assets/icon.png';
-import { APP_NAME, APP_TAGLINE } from '@/constants/app';
-import { PRIMARY_NAVIGATION } from '@/constants/routes';
 import { theme } from '@/constants/theme';
 import type { AppRoute } from '@/types';
+import { AppLogo } from './AppLogo';
+import { DesktopSidebar } from './DesktopSidebar';
+import { MobileBottomNav } from './MobileBottomNav';
+import { PageContainer } from './PageContainer';
 
 type AppShellProps = {
   activeRoute: AppRoute;
@@ -15,30 +16,24 @@ type AppShellProps = {
 };
 
 export function AppShell({ activeRoute, children, navigate, routeLabels }: AppShellProps) {
+  const { width } = useWindowDimensions();
+  const desktop = width >= 960;
+
   return (
     <SafeAreaView style={styles.app}>
       <StatusBar style="light" />
-      <View style={styles.header}>
-        <View style={styles.brandRow}>
-          <Image source={logo} style={styles.logo} />
-          <View>
-            <Text style={styles.brand}>{APP_NAME}</Text>
-            <Text style={styles.tagline}>{APP_TAGLINE}</Text>
-          </View>
+      <View style={styles.shell}>
+        {desktop ? <DesktopSidebar activeRoute={activeRoute} navigate={navigate} routeLabels={routeLabels} /> : null}
+        <View style={styles.main}>
+          {!desktop ? (
+            <View style={styles.mobileHeader}>
+              <AppLogo />
+            </View>
+          ) : null}
+          <PageContainer desktopSidebar={desktop}>{children}</PageContainer>
         </View>
       </View>
-      <ScrollView contentContainerStyle={styles.content}>{children}</ScrollView>
-      <View style={styles.nav}>
-        {PRIMARY_NAVIGATION.map((route) => (
-          <Pressable
-            key={route}
-            onPress={() => navigate(route)}
-            style={[styles.navItem, activeRoute === route && styles.navItemActive]}
-          >
-            <Text style={[styles.navText, activeRoute === route && styles.navTextActive]}>{routeLabels[route]}</Text>
-          </Pressable>
-        ))}
-      </View>
+      {!desktop ? <MobileBottomNav activeRoute={activeRoute} navigate={navigate} routeLabels={routeLabels} /> : null}
     </SafeAreaView>
   );
 }
@@ -49,69 +44,19 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: '100%'
   },
-  brand: {
-    color: theme.colors.text,
-    fontSize: 20,
-    fontWeight: '900'
+  main: {
+    flex: 1
   },
-  brandRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: theme.spacing.sm
-  },
-  content: {
-    alignSelf: 'center',
-    gap: theme.spacing.md,
-    maxWidth: 1160,
-    padding: theme.spacing.lg,
-    paddingBottom: 112,
-    width: '100%'
-  },
-  header: {
-    backgroundColor: theme.colors.surface,
+  mobileHeader: {
+    backgroundColor: theme.colors.background,
     borderBottomColor: theme.colors.border,
     borderBottomWidth: 1,
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: 14
   },
-  logo: {
-    borderRadius: theme.radii.md,
-    height: 42,
-    width: 42
-  },
-  nav: {
-    backgroundColor: theme.colors.surface,
-    borderTopColor: theme.colors.border,
-    borderTopWidth: 1,
-    bottom: 0,
+  shell: {
+    flex: 1,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: theme.spacing.xs,
-    justifyContent: 'center',
-    left: 0,
-    padding: theme.spacing.sm,
-    position: 'absolute',
-    right: 0
-  },
-  navItem: {
-    alignItems: 'center',
-    borderRadius: theme.radii.md,
-    minWidth: 92,
-    paddingHorizontal: 12,
-    paddingVertical: 10
-  },
-  navItemActive: {
-    backgroundColor: theme.colors.primary
-  },
-  navText: {
-    color: theme.colors.textMuted,
-    fontWeight: '900'
-  },
-  navTextActive: {
-    color: theme.colors.background
-  },
-  tagline: {
-    color: theme.colors.textMuted,
-    fontSize: 12
+    minHeight: 0
   }
 });
