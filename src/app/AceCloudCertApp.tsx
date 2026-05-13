@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import type { ReactNode } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AppCard, FeatureCard, StatCard } from '@/components/cards';
 import { DomainProgressList } from '@/components/charts';
-import { InputField, PasswordField, SelectField } from '@/components/forms';
+import { InputField, PasswordField } from '@/components/forms';
 import { AppShell, SectionHeader } from '@/components/layout';
 import { Badge, EmptyState, PrimaryButton, ProgressBar, SecondaryButton, Table, Tabs, ToastNotification } from '@/components/ui';
 import type { TableColumn } from '@/components/ui';
@@ -10,13 +11,13 @@ import { APP_NAME, DEFAULT_CERTIFICATION_ID, DEFAULT_USER_ID, PASS_MARK_PERCENT 
 import { APP_ROUTES } from '@/constants/routes';
 import { theme } from '@/constants/theme';
 import { certifications, knowledgeTopics, legalPages, questionBank, subscriptionPlans } from '@/data';
-import { featureModules, featureRouteLabels } from '@/features';
+import { ROUTE_LABELS, ROUTE_META, getBreadcrumbs, getNavigationRoute, isProtectedRoute } from '@/app/navigation';
+import { featureModules } from '@/features';
 import { useAppNavigation } from '@/hooks';
 import { getAvailableFeatures } from '@/lib';
 import { serviceReadiness } from '@/services';
-import type { AppRoute, ServiceReadinessItem, UserPlan, UserProfile } from '@/types';
-import { calculateReadinessScore, countQuestionsByDomain } from '@/utils';
-import { formatCount, formatPercent } from '@/utils';
+import type { AppRoute, LegalPage, ServiceReadinessItem, UserProfile } from '@/types';
+import { calculateReadinessScore, countQuestionsByDomain, formatCount, formatPercent } from '@/utils';
 
 const localUser: UserProfile = {
   id: DEFAULT_USER_ID,
@@ -24,6 +25,8 @@ const localUser: UserProfile = {
   email: 'learner@acecloudcert.com',
   plan: 'Free'
 };
+
+const authEntryRoutes = new Set<AppRoute>([APP_ROUTES.login, APP_ROUTES.signup, APP_ROUTES.forgotPassword]);
 
 const serviceColumns: readonly TableColumn<ServiceReadinessItem>[] = [
   {
@@ -47,82 +50,361 @@ const serviceColumns: readonly TableColumn<ServiceReadinessItem>[] = [
 ];
 
 export default function AceCloudCertApp() {
-  const { activeRoute, navigate } = useAppNavigation();
+  const { activeRoute, navigate: setActiveRoute } = useAppNavigation(APP_ROUTES.landing);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [redirectAfterLogin, setRedirectAfterLogin] = useState<AppRoute>(APP_ROUTES.dashboard);
   const [email, setEmail] = useState(localUser.email);
   const [password, setPassword] = useState('password123');
-  const [selectedPlan, setSelectedPlan] = useState<UserPlan>('Free');
+  const [fullName, setFullName] = useState(localUser.name);
+  const [activeTestTab, setActiveTestTab] = useState('overview');
 
-  const activeCertification = certifications.find((certification) => certification.id === DEFAULT_CERTIFICATION_ID) ?? certifications[0];
   const domainCounts = useMemo(() => countQuestionsByDomain(questionBank), []);
   const availableFeatures = useMemo(() => getAvailableFeatures(featureModules), []);
-  const readiness = calculateReadinessScore(questionBank.length, 0);
-  const routeLabels = featureRouteLabels as Record<AppRoute, string>;
+  const activeMenuRoute =
+    isAuthenticated && !isProtectedRoute(activeRoute) ? getAuthenticatedPublicMenuRoute(activeRoute) : getNavigationRoute(activeRoute);
+
+  function navigate(route: AppRoute) {
+    if (!isAuthenticated && isProtectedRoute(route)) {
+      setRedirectAfterLogin(route);
+      setActiveRoute(APP_ROUTES.login);
+      return;
+    }
+
+    if (isAuthenticated && authEntryRoutes.has(route)) {
+      setActiveRoute(APP_ROUTES.dashboard);
+      return;
+    }
+
+    setActiveRoute(route);
+  }
+
+  function login() {
+    setIsAuthenticated(true);
+    setActiveRoute(redirectAfterLogin);
+  }
+
+  function logout() {
+    setIsAuthenticated(false);
+    setRedirectAfterLogin(APP_ROUTES.dashboard);
+    setActiveRoute(APP_ROUTES.landing);
+  }
 
   return (
-    <AppShell activeRoute={activeRoute} navigate={navigate} routeLabels={routeLabels}>
-      {activeRoute === APP_ROUTES.dashboard && (
-        <DashboardFoundation
-          activeCertificationTitle={activeCertification?.title ?? 'AWS Certified Cloud Practitioner'}
-          availableFeatureCount={availableFeatures.length}
-          navigate={navigate}
-          readiness={readiness}
-          user={localUser}
-        />
-      )}
-      {activeRoute === APP_ROUTES.auth && (
-        <AuthFoundation
+    <AppShell
+      activeMenuRoute={activeMenuRoute}
+      activeRoute={activeRoute}
+      isAuthenticated={isAuthenticated}
+      navigate={navigate}
+      onLogout={logout}
+      routeLabels={ROUTE_LABELS}
+    >
+      {activeRoute !== APP_ROUTES.landing ? <RouteHeading navigate={navigate} route={activeRoute} /> : null}
+      {activeRoute === APP_ROUTES.landing ? (
+        <LandingPage isAuthenticated={isAuthenticated} navigate={navigate} />
+      ) : activeRoute === APP_ROUTES.login ? (
+        <LoginPage email={email} onLogin={login} password={password} setEmail={setEmail} setPassword={setPassword} navigate={navigate} />
+      ) : activeRoute === APP_ROUTES.signup ? (
+        <SignupPage
           email={email}
+          fullName={fullName}
+          onSignup={login}
           password={password}
-          selectedPlan={selectedPlan}
           setEmail={setEmail}
+          setFullName={setFullName}
           setPassword={setPassword}
-          setSelectedPlan={setSelectedPlan}
+          navigate={navigate}
         />
+      ) : activeRoute === APP_ROUTES.forgotPassword ? (
+        <ForgotPasswordPage email={email} setEmail={setEmail} navigate={navigate} />
+      ) : activeRoute === APP_ROUTES.pricing ? (
+        <PricingPage isAuthenticated={isAuthenticated} navigate={navigate} />
+      ) : activeRoute === APP_ROUTES.privacyPolicy ? (
+        <LegalPageContent legalPageId="privacy" />
+      ) : activeRoute === APP_ROUTES.terms ? (
+        <LegalPageContent legalPageId="terms" />
+      ) : activeRoute === APP_ROUTES.dashboard ? (
+        <DashboardPage availableFeatureCount={availableFeatures.length} domainCounts={domainCounts} navigate={navigate} user={localUser} />
+      ) : activeRoute === APP_ROUTES.certifications ? (
+        <CertificationsPage navigate={navigate} />
+      ) : activeRoute === APP_ROUTES.certificationDetail ? (
+        <CertificationDetailPage navigate={navigate} />
+      ) : activeRoute === APP_ROUTES.tests ? (
+        <TestsPage activeTab={activeTestTab} domainCounts={domainCounts} navigate={navigate} setActiveTab={setActiveTestTab} />
+      ) : activeRoute === APP_ROUTES.mockTest ? (
+        <MockTestPage navigate={navigate} />
+      ) : activeRoute === APP_ROUTES.quiz ? (
+        <QuizPage navigate={navigate} />
+      ) : activeRoute === APP_ROUTES.testResult ? (
+        <TestResultPage navigate={navigate} />
+      ) : activeRoute === APP_ROUTES.testReview ? (
+        <TestReviewPage navigate={navigate} />
+      ) : activeRoute === APP_ROUTES.knowledgeBase ? (
+        <KnowledgeBasePage navigate={navigate} />
+      ) : activeRoute === APP_ROUTES.knowledgeTopicDetail ? (
+        <KnowledgeTopicDetailPage navigate={navigate} />
+      ) : activeRoute === APP_ROUTES.certificates ? (
+        <CertificatesPage navigate={navigate} />
+      ) : activeRoute === APP_ROUTES.certificateDetail ? (
+        <CertificateDetailPage navigate={navigate} />
+      ) : activeRoute === APP_ROUTES.profile ? (
+        <ProfilePage navigate={navigate} onLogout={logout} user={localUser} />
+      ) : activeRoute === APP_ROUTES.settings ? (
+        <SettingsPage navigate={navigate} />
+      ) : activeRoute === APP_ROUTES.subscription ? (
+        <SubscriptionPage navigate={navigate} />
+      ) : (
+        <AdminDashboardPage navigate={navigate} />
       )}
-      {activeRoute === APP_ROUTES.certifications && <CertificationsFoundation />}
-      {activeRoute === APP_ROUTES.tests && <TestsFoundation domainCounts={domainCounts} />}
-      {activeRoute === APP_ROUTES.questions && <QuestionsFoundation domainCounts={domainCounts} />}
-      {activeRoute === APP_ROUTES.knowledgeBase && <KnowledgeBaseFoundation />}
-      {activeRoute === APP_ROUTES.certificates && <CertificatesFoundation />}
-      {activeRoute === APP_ROUTES.subscriptions && <SubscriptionsFoundation />}
-      {activeRoute === APP_ROUTES.profile && <ProfileFoundation user={localUser} />}
-      {activeRoute === APP_ROUTES.admin && <AdminFoundation />}
-      {activeRoute === APP_ROUTES.legal && <LegalFoundation />}
     </AppShell>
   );
 }
 
-type DashboardFoundationProps = {
-  activeCertificationTitle: string;
-  availableFeatureCount: number;
+type NavigationProps = {
   navigate: (route: AppRoute) => void;
-  readiness: number;
-  user: UserProfile;
 };
 
-function DashboardFoundation({
-  activeCertificationTitle,
-  availableFeatureCount,
+function RouteHeading({ navigate, route }: NavigationProps & { route: AppRoute }) {
+  const breadcrumbs = getBreadcrumbs(route);
+  const routeMeta = ROUTE_META[route];
+
+  return (
+    <View style={styles.routeHeading}>
+      <View style={styles.breadcrumbs}>
+        {breadcrumbs.map((breadcrumb, index) => {
+          const isLast = index === breadcrumbs.length - 1;
+
+          return (
+            <View key={breadcrumb.route} style={styles.breadcrumbItem}>
+              <Pressable disabled={isLast} onPress={() => navigate(breadcrumb.route)}>
+                <Text style={[styles.breadcrumbText, isLast && styles.activeBreadcrumbText]}>{breadcrumb.title}</Text>
+              </Pressable>
+              {!isLast ? <Text style={styles.breadcrumbSeparator}>/</Text> : null}
+            </View>
+          );
+        })}
+      </View>
+      <SectionHeader subtitle={routeMeta.subtitle} title={routeMeta.title} />
+    </View>
+  );
+}
+
+function getAuthenticatedPublicMenuRoute(route: AppRoute) {
+  if (route === APP_ROUTES.pricing) {
+    return APP_ROUTES.subscription;
+  }
+
+  if (route === APP_ROUTES.privacyPolicy || route === APP_ROUTES.terms) {
+    return APP_ROUTES.settings;
+  }
+
+  return APP_ROUTES.dashboard;
+}
+
+function LandingPage({ isAuthenticated, navigate }: NavigationProps & { isAuthenticated: boolean }) {
+  return (
+    <>
+      <View style={styles.landingHero}>
+        <Badge tone="primary">Enterprise cloud certification platform</Badge>
+        <Text style={styles.heroTitle}>{APP_NAME}</Text>
+        <Text style={styles.heroCopy}>
+          A mobile-first learning workspace for mock exams, topic quizzes, study paths, progress tracking, certificates,
+          subscriptions, and future Firebase and Stripe integrations.
+        </Text>
+        <View style={styles.actions}>
+          <PrimaryButton onPress={() => navigate(isAuthenticated ? APP_ROUTES.dashboard : APP_ROUTES.signup)}>
+            {isAuthenticated ? 'Open dashboard' : 'Start learning'}
+          </PrimaryButton>
+          <SecondaryButton onPress={() => navigate(APP_ROUTES.pricing)}>View pricing</SecondaryButton>
+          <SecondaryButton onPress={() => navigate(isAuthenticated ? APP_ROUTES.tests : APP_ROUTES.login)}>
+            {isAuthenticated ? 'Start mock test' : 'Login'}
+          </SecondaryButton>
+        </View>
+      </View>
+
+      <View style={styles.metricGrid}>
+        <StatCard label="Primary path" value="AWS CCP" />
+        <StatCard label="Exam pass mark" value={formatPercent(PASS_MARK_PERCENT)} />
+        <StatCard label="Question domains" value={Object.keys(countQuestionsByDomain(questionBank)).length} />
+      </View>
+
+      <View style={styles.cardGrid}>
+        <RouteCard
+          badge="Learn"
+          copy="Topic-led study paths for cloud concepts, AWS infrastructure, IAM, billing, and support."
+          onPress={() => navigate(isAuthenticated ? APP_ROUTES.knowledgeBase : APP_ROUTES.login)}
+          title="Knowledge base"
+        />
+        <RouteCard
+          badge="Practice"
+          copy="Dedicated routes for mock exams, quick quizzes, results, and answer review."
+          onPress={() => navigate(isAuthenticated ? APP_ROUTES.tests : APP_ROUTES.login)}
+          title="Test engine"
+        />
+        <RouteCard
+          badge="Proof"
+          copy="Certificate history and certificate detail routes are ready for the achievement module."
+          onPress={() => navigate(isAuthenticated ? APP_ROUTES.certificates : APP_ROUTES.login)}
+          title="Certificates"
+        />
+      </View>
+    </>
+  );
+}
+
+type AuthPageProps = NavigationProps & {
+  email: string;
+  password: string;
+  setEmail: (value: string) => void;
+  setPassword: (value: string) => void;
+};
+
+function LoginPage({ email, navigate, onLogin, password, setEmail, setPassword }: AuthPageProps & { onLogin: () => void }) {
+  return (
+    <CenteredForm>
+      <AppCard style={styles.formCard}>
+        <Badge tone="info">Public route</Badge>
+        <InputField label="Email" onChangeText={setEmail} value={email} />
+        <PasswordField label="Password" onChangeText={setPassword} value={password} />
+        <PrimaryButton onPress={onLogin}>Login to workspace</PrimaryButton>
+        <View style={styles.inlineActions}>
+          <SecondaryButton onPress={() => navigate(APP_ROUTES.signup)}>Create account</SecondaryButton>
+          <SecondaryButton onPress={() => navigate(APP_ROUTES.forgotPassword)}>Forgot password</SecondaryButton>
+        </View>
+      </AppCard>
+    </CenteredForm>
+  );
+}
+
+function SignupPage({
+  email,
+  fullName,
   navigate,
-  readiness,
+  onSignup,
+  password,
+  setEmail,
+  setFullName,
+  setPassword
+}: AuthPageProps & {
+  fullName: string;
+  onSignup: () => void;
+  setFullName: (value: string) => void;
+}) {
+  return (
+    <CenteredForm>
+      <AppCard style={styles.formCard}>
+        <Badge tone="info">Public route</Badge>
+        <InputField label="Full name" onChangeText={setFullName} value={fullName} />
+        <InputField label="Email" onChangeText={setEmail} value={email} />
+        <PasswordField label="Password" onChangeText={setPassword} value={password} />
+        <PasswordField label="Confirm password" onChangeText={setPassword} value={password} />
+        <Text style={styles.copy}>
+          By creating an account, the learner accepts the Privacy Policy and Terms and Conditions routes.
+        </Text>
+        <PrimaryButton onPress={onSignup}>Create account</PrimaryButton>
+        <View style={styles.inlineActions}>
+          <SecondaryButton onPress={() => navigate(APP_ROUTES.login)}>Already have an account</SecondaryButton>
+          <SecondaryButton onPress={() => navigate(APP_ROUTES.terms)}>Review terms</SecondaryButton>
+        </View>
+      </AppCard>
+    </CenteredForm>
+  );
+}
+
+function ForgotPasswordPage({ email, navigate, setEmail }: NavigationProps & { email: string; setEmail: (value: string) => void }) {
+  return (
+    <CenteredForm>
+      <AppCard style={styles.formCard}>
+        <Badge tone="info">Public route</Badge>
+        <InputField label="Email" onChangeText={setEmail} value={email} />
+        <Text style={styles.copy}>This route is prepared for Firebase password reset. The button returns to login for now.</Text>
+        <PrimaryButton onPress={() => navigate(APP_ROUTES.login)}>Send reset link</PrimaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.login)}>Back to login</SecondaryButton>
+      </AppCard>
+    </CenteredForm>
+  );
+}
+
+function PricingPage({ isAuthenticated, navigate }: NavigationProps & { isAuthenticated: boolean }) {
+  return (
+    <Section
+      eyebrow="Plans"
+      subtitle="Public pricing routes connect to signup for guests and subscription management for authenticated learners."
+      title="Pricing built for self-paced certification prep"
+    >
+      <View style={styles.cardGrid}>
+        {subscriptionPlans.map((plan) => (
+          <AppCard key={plan.id} style={styles.flexCard}>
+            <View style={styles.row}>
+              <Text style={styles.cardTitle}>{plan.name}</Text>
+              {plan.id === 'Free' ? <Badge tone="success">Starter</Badge> : <Badge tone="primary">Upgrade</Badge>}
+            </View>
+            <Text style={styles.price}>{plan.priceLabel}</Text>
+            {plan.features.map((feature) => (
+              <Text key={feature} style={styles.copy}>
+                - {feature}
+              </Text>
+            ))}
+            <PrimaryButton onPress={() => navigate(isAuthenticated ? APP_ROUTES.subscription : APP_ROUTES.signup)}>
+              {isAuthenticated ? 'Manage plan' : 'Choose plan'}
+            </PrimaryButton>
+          </AppCard>
+        ))}
+      </View>
+    </Section>
+  );
+}
+
+function LegalPageContent({ legalPageId }: { legalPageId: LegalPage['id'] }) {
+  const legalPage = legalPages.find((page) => page.id === legalPageId);
+
+  return (
+    <Section
+      eyebrow="Compliance"
+      subtitle={legalPage?.summary ?? 'Compliance route for learner trust and platform governance.'}
+      title={legalPage?.title ?? 'Legal Notice'}
+    >
+      <AppCard>
+        <Text style={styles.copy}>
+          AceCloudCert separates public legal pages from authenticated product routes so privacy, terms, cookie consent,
+          and data handling notices can be linked from signup, settings, and the footer without route duplication.
+        </Text>
+        <Text style={styles.copy}>
+          This page is ready for final legal copy, version history, consent capture, and future export or deletion request
+          workflows.
+        </Text>
+      </AppCard>
+    </Section>
+  );
+}
+
+function DashboardPage({
+  availableFeatureCount,
+  domainCounts,
+  navigate,
   user
-}: DashboardFoundationProps) {
+}: NavigationProps & {
+  availableFeatureCount: number;
+  domainCounts: Record<string, number>;
+  user: UserProfile;
+}) {
+  const readiness = calculateReadinessScore(questionBank.length, 0);
+  const activeCertificationTitle =
+    certifications.find((certification) => certification.id === DEFAULT_CERTIFICATION_ID)?.title ??
+    'AWS Certified Cloud Practitioner';
+
   return (
     <>
       <AppCard style={styles.hero}>
         <SectionHeader
-          eyebrow="Enterprise foundation"
+          eyebrow="Protected route"
+          subtitle="This dashboard is the authenticated app entry point with working navigation into every major product area."
           title={`Welcome, ${user.name}`}
-          subtitle={`${APP_NAME} now has premium design tokens, shared UI primitives, central routes, and feature-owned module boundaries.`}
         />
-        <ToastNotification
-          message="The design system is ready for feature-by-feature rebuild work."
-          title="Architecture upgraded"
-          tone="success"
-        />
+        <ToastNotification message="Navigation and layout architecture are wired. Feature logic comes next." title="Workspace ready" tone="success" />
         <View style={styles.actions}>
-          <PrimaryButton onPress={() => navigate(APP_ROUTES.tests)}>Review test foundation</PrimaryButton>
-          <SecondaryButton onPress={() => navigate(APP_ROUTES.certifications)}>Certification catalogue</SecondaryButton>
+          <PrimaryButton onPress={() => navigate(APP_ROUTES.mockTest)}>Start mock test</PrimaryButton>
+          <SecondaryButton onPress={() => navigate(APP_ROUTES.knowledgeBase)}>Continue learning</SecondaryButton>
+          <SecondaryButton onPress={() => navigate(APP_ROUTES.subscription)}>Upgrade plan</SecondaryButton>
         </View>
       </AppCard>
 
@@ -130,10 +412,10 @@ function DashboardFoundation({
         <StatCard label="Active path" value={activeCertificationTitle} />
         <StatCard label="Readiness baseline" value={formatPercent(readiness)} />
         <StatCard label="Feature modules" value={availableFeatureCount} />
-        <StatCard label="Pass mark" value={formatPercent(PASS_MARK_PERCENT)} />
+        <StatCard label="Domains mapped" value={Object.keys(domainCounts).length} />
       </View>
 
-      <Section title="Feature Module Map" eyebrow="Architecture">
+      <Section eyebrow="Quick actions" title="Route map">
         <View style={styles.cardGrid}>
           {featureModules.map((feature) => (
             <FeatureCard key={feature.id} feature={feature} onPress={() => navigate(feature.route)} />
@@ -144,43 +426,9 @@ function DashboardFoundation({
   );
 }
 
-type AuthFoundationProps = {
-  email: string;
-  password: string;
-  selectedPlan: UserPlan;
-  setEmail: (value: string) => void;
-  setPassword: (value: string) => void;
-  setSelectedPlan: (value: UserPlan) => void;
-};
-
-function AuthFoundation({ email, password, selectedPlan, setEmail, setPassword, setSelectedPlan }: AuthFoundationProps) {
+function CertificationsPage({ navigate }: NavigationProps) {
   return (
-    <Section
-      title="Authentication Foundation"
-      eyebrow="Identity"
-      subtitle="A polished form surface is ready for Firebase Auth, password reset, session persistence, and profile onboarding."
-    >
-      <AppCard style={styles.formCard}>
-        <InputField label="Email" onChangeText={setEmail} value={email} />
-        <PasswordField label="Password" onChangeText={setPassword} value={password} />
-        <SelectField
-          label="Starting plan"
-          onChange={(value) => setSelectedPlan(value as UserPlan)}
-          options={subscriptionPlans.map((plan) => ({ label: plan.name, value: plan.id }))}
-          value={selectedPlan}
-        />
-      </AppCard>
-    </Section>
-  );
-}
-
-function CertificationsFoundation() {
-  return (
-    <Section
-      title="Certification Catalogue Foundation"
-      eyebrow="Content catalogue"
-      subtitle="Certification cards now share consistent badges, progress bars, spacing, and enterprise card treatment."
-    >
+    <Section eyebrow="Catalogue" subtitle="Certification cards route into the certification detail layout." title="Certification catalogue">
       <View style={styles.cardGrid}>
         {certifications.map((certification) => (
           <AppCard key={certification.id} style={styles.flexCard}>
@@ -192,6 +440,9 @@ function CertificationsFoundation() {
             <Text style={styles.copy}>{certification.difficulty}</Text>
             <Text style={styles.copy}>{formatCount(certification.questionCount, 'question')}</Text>
             <ProgressBar value={certification.progress} />
+            <PrimaryButton onPress={() => navigate(APP_ROUTES.certificationDetail)}>
+              {certification.status === 'active' ? 'Open path' : 'View roadmap'}
+            </PrimaryButton>
           </AppCard>
         ))}
       </View>
@@ -199,70 +450,156 @@ function CertificationsFoundation() {
   );
 }
 
-type DomainProps = {
-  domainCounts: Record<string, number>;
-};
-
-function TestsFoundation({ domainCounts }: DomainProps) {
+function CertificationDetailPage({ navigate }: NavigationProps) {
   return (
     <Section
-      title="Test Engine Foundation"
-      eyebrow="Exam engine"
-      subtitle="Domain analytics, pass mark constants, and future attempt persistence now have a consistent visual container."
+      eyebrow="AWS Certified Cloud Practitioner"
+      subtitle="Detail route for objectives, progress, available tests, and linked study topics."
+      title="Certification detail layout"
     >
+      <View style={styles.metricGrid}>
+        <StatCard label="Question bank" value={formatCount(questionBank.length, 'question')} />
+        <StatCard label="Pass target" value={formatPercent(PASS_MARK_PERCENT)} />
+        <StatCard label="Progress" value="64%" />
+      </View>
       <AppCard>
-        <DomainProgressList domainCounts={domainCounts} />
+        <DomainProgressList domainCounts={countQuestionsByDomain(questionBank)} />
       </AppCard>
+      <View style={styles.actions}>
+        <PrimaryButton onPress={() => navigate(APP_ROUTES.mockTest)}>Start mock test</PrimaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.quiz)}>Start quiz</SecondaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.knowledgeTopicDetail)}>Open study topic</SecondaryButton>
+      </View>
     </Section>
   );
 }
 
-function QuestionsFoundation({ domainCounts }: DomainProps) {
-  const [activeTab, setActiveTab] = useState('domains');
-
+function TestsPage({
+  activeTab,
+  domainCounts,
+  navigate,
+  setActiveTab
+}: NavigationProps & {
+  activeTab: string;
+  domainCounts: Record<string, number>;
+  setActiveTab: (value: string) => void;
+}) {
   return (
-    <Section
-      title="Question Bank Foundation"
-      eyebrow="Content quality"
-      subtitle="The question model is typed by certification, domain, difficulty, answer, and explanation."
-    >
+    <Section eyebrow="Exam engine" subtitle="Test engine routes are separated for mock tests, quizzes, results, and reviews." title="Tests">
       <Tabs
         activeId={activeTab}
         onChange={setActiveTab}
         tabs={[
-          { id: 'domains', label: 'Domains' },
-          { id: 'model', label: 'Data model' }
+          { id: 'overview', label: 'Overview' },
+          { id: 'domains', label: 'Domains' }
         ]}
       />
       {activeTab === 'domains' ? (
-        <View style={styles.metricGrid}>
-          <StatCard label="Seed questions" value={questionBank.length} />
-          <StatCard label="Domains covered" value={Object.keys(domainCounts).length} />
-          <StatCard label="Primary certification" value="AWS CCP" />
-        </View>
-      ) : (
         <AppCard>
-          <Text style={styles.cardTitle}>Question contract</Text>
-          <Text style={styles.copy}>id, certificationId, domain, prompt, options, correctAnswer, explanation, difficulty</Text>
+          <DomainProgressList domainCounts={domainCounts} />
         </AppCard>
+      ) : (
+        <View style={styles.cardGrid}>
+          <RouteCard badge="Mock" copy="Full exam route with timer, progress, and submit navigation shell." onPress={() => navigate(APP_ROUTES.mockTest)} title="Mock test" />
+          <RouteCard badge="Quiz" copy="Focused topic quiz route for short practice sessions." onPress={() => navigate(APP_ROUTES.quiz)} title="Quick quiz" />
+          <RouteCard badge="Results" copy="Score summary and next-step layout." onPress={() => navigate(APP_ROUTES.testResult)} title="Latest result" />
+          <RouteCard badge="Review" copy="Answer review route with explanations." onPress={() => navigate(APP_ROUTES.testReview)} title="Answer review" />
+        </View>
       )}
     </Section>
   );
 }
 
-function KnowledgeBaseFoundation() {
+function MockTestPage({ navigate }: NavigationProps) {
   return (
-    <Section
-      title="Knowledge Base Foundation"
-      eyebrow="Learning content"
-      subtitle="Study topics use the same card, badge, typography, and spacing rules as the rest of the product."
-    >
+    <Section eyebrow="Mock exam" subtitle="Layout-only exam route prepared for the test engine implementation." title="AWS CCP mock test">
+      <AppCard style={styles.examCard}>
+        <View style={styles.row}>
+          <Badge tone="info">Question 1 of 65</Badge>
+          <Text style={styles.copy}>Timer placeholder: 89:42</Text>
+        </View>
+        <ProgressBar value={12} />
+        <Text style={styles.cardTitle}>Which AWS benefit helps customers avoid large upfront infrastructure purchases?</Text>
+        {['Elastic capacity', 'Capital expense reduction', 'Pay-as-you-go pricing', 'Dedicated hardware ownership'].map((option) => (
+          <AppCard key={option} style={styles.optionCard}>
+            <Text style={styles.copy}>{option}</Text>
+          </AppCard>
+        ))}
+        <View style={styles.actions}>
+          <SecondaryButton onPress={() => navigate(APP_ROUTES.tests)}>Exit test</SecondaryButton>
+          <SecondaryButton onPress={() => navigate(APP_ROUTES.quiz)}>Switch to quiz</SecondaryButton>
+          <PrimaryButton onPress={() => navigate(APP_ROUTES.testResult)}>Submit test</PrimaryButton>
+        </View>
+      </AppCard>
+    </Section>
+  );
+}
+
+function QuizPage({ navigate }: NavigationProps) {
+  return (
+    <Section eyebrow="Topic quiz" subtitle="Short-form quiz layout route for the upcoming topic quiz engine." title="Cloud concepts quiz">
+      <AppCard style={styles.examCard}>
+        <Badge tone="info">Quick quiz</Badge>
+        <Text style={styles.cardTitle}>What does AWS Cloud elasticity allow a workload to do?</Text>
+        <Text style={styles.copy}>Select an answer, move through the quiz, and land on the same result route used by mocks.</Text>
+        <View style={styles.actions}>
+          <SecondaryButton onPress={() => navigate(APP_ROUTES.tests)}>Back to tests</SecondaryButton>
+          <PrimaryButton onPress={() => navigate(APP_ROUTES.testResult)}>Finish quiz</PrimaryButton>
+        </View>
+      </AppCard>
+    </Section>
+  );
+}
+
+function TestResultPage({ navigate }: NavigationProps) {
+  return (
+    <Section eyebrow="Result" subtitle="Result route for scores, pass state, domain breakdown, review, and certificate access." title="Latest test result">
+      <View style={styles.metricGrid}>
+        <StatCard label="Score" value="82%" />
+        <StatCard label="Correct" value="53" />
+        <StatCard label="Incorrect" value="12" />
+        <StatCard label="Time taken" value="71m" />
+      </View>
+      <ToastNotification message="This learner passed the mock route and can open the certificate detail layout." title="Passed" tone="success" />
+      <View style={styles.actions}>
+        <PrimaryButton onPress={() => navigate(APP_ROUTES.testReview)}>Review answers</PrimaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.certificateDetail)}>Open certificate</SecondaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.mockTest)}>Retry test</SecondaryButton>
+      </View>
+    </Section>
+  );
+}
+
+function TestReviewPage({ navigate }: NavigationProps) {
+  return (
+    <Section eyebrow="Review" subtitle="Review route for answer explanations after a completed attempt." title="Answer review">
+      <View style={styles.cardGrid}>
+        {questionBank.slice(0, 4).map((question, index) => (
+          <AppCard key={question.id} style={styles.flexCard}>
+            <Badge tone={index % 2 === 0 ? 'success' : 'danger'}>{index % 2 === 0 ? 'Correct' : 'Review'}</Badge>
+            <Text style={styles.cardTitle}>{question.prompt}</Text>
+            <Text style={styles.copy}>{question.explanation}</Text>
+          </AppCard>
+        ))}
+      </View>
+      <View style={styles.actions}>
+        <PrimaryButton onPress={() => navigate(APP_ROUTES.testResult)}>Back to result</PrimaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.tests)}>All tests</SecondaryButton>
+      </View>
+    </Section>
+  );
+}
+
+function KnowledgeBasePage({ navigate }: NavigationProps) {
+  return (
+    <Section eyebrow="Study" subtitle="Knowledge cards route to the topic detail layout." title="Knowledge base">
       <View style={styles.cardGrid}>
         {knowledgeTopics.map((topic) => (
           <AppCard key={topic.id} style={styles.flexCard}>
             <Badge tone="info">{topic.domain}</Badge>
             <Text style={styles.cardTitle}>{topic.title}</Text>
             <Text style={styles.copy}>{topic.summary}</Text>
+            <PrimaryButton onPress={() => navigate(APP_ROUTES.knowledgeTopicDetail)}>Open topic</PrimaryButton>
           </AppCard>
         ))}
       </View>
@@ -270,100 +607,130 @@ function KnowledgeBaseFoundation() {
   );
 }
 
-function CertificatesFoundation() {
+function KnowledgeTopicDetailPage({ navigate }: NavigationProps) {
+  const topic = knowledgeTopics.find((item) => item.id === 'iam-basics') ?? knowledgeTopics[0];
+
   return (
-    <Section
-      title="Certificates Foundation"
-      eyebrow="Achievements"
-      subtitle="Certificate previews, exports, storage paths, and verification ids have a dedicated module boundary."
-    >
+    <Section eyebrow={topic?.domain ?? 'Study topic'} subtitle={topic?.summary} title={topic?.title ?? 'Knowledge topic detail'}>
+      <AppCard>
+        {(topic?.bullets ?? ['Structured notes', 'Related quiz route', 'Progress tracking ready']).map((bullet) => (
+          <Text key={bullet} style={styles.copy}>
+            - {bullet}
+          </Text>
+        ))}
+      </AppCard>
+      <View style={styles.actions}>
+        <PrimaryButton onPress={() => navigate(APP_ROUTES.quiz)}>Start related quiz</PrimaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.knowledgeBase)}>Back to knowledge base</SecondaryButton>
+      </View>
+    </Section>
+  );
+}
+
+function CertificatesPage({ navigate }: NavigationProps) {
+  return (
+    <Section eyebrow="Achievements" subtitle="Certificate list route with history and detail routing." title="Certificates">
       <EmptyState
-        description="PDF and PNG generation will attach to this module when the certificate feature build starts."
-        title="No certificate records yet"
+        actionLabel="Open sample certificate"
+        description="Certificate generation logic comes later, but the list and detail routes are already connected."
+        onAction={() => navigate(APP_ROUTES.certificateDetail)}
+        title="No generated certificates yet"
       />
     </Section>
   );
 }
 
-function SubscriptionsFoundation() {
+function CertificateDetailPage({ navigate }: NavigationProps) {
   return (
-    <Section
-      title="Subscriptions Foundation"
-      eyebrow="Billing"
-      subtitle="Plan cards are ready for Stripe Checkout, billing portal links, and entitlement enforcement."
-    >
-      <View style={styles.cardGrid}>
-        {subscriptionPlans.map((plan) => (
-          <AppCard key={plan.id} style={styles.flexCard}>
-            <View style={styles.row}>
-              <Text style={styles.cardTitle}>{plan.name}</Text>
-              {plan.id === 'Free' ? <Badge tone="success">Current</Badge> : null}
-            </View>
-            <Text style={styles.price}>{plan.priceLabel}</Text>
-            {plan.features.map((feature) => (
-              <Text key={feature} style={styles.copy}>- {feature}</Text>
-            ))}
-          </AppCard>
-        ))}
+    <Section eyebrow="Certificate" subtitle="Certificate detail route prepared for export and sharing integrations." title="Certificate preview">
+      <AppCard style={styles.certificatePreview}>
+        <Text style={styles.certificateBrand}>{APP_NAME}</Text>
+        <Text style={styles.certificateTitle}>Certificate of Completion</Text>
+        <Text style={styles.copy}>Awarded to {localUser.name}</Text>
+        <Text style={styles.cardTitle}>AWS Certified Cloud Practitioner Practice Exam</Text>
+        <Text style={styles.copy}>Score: 82% | Certificate ID: ACC-AWS-CCP-SAMPLE</Text>
+      </AppCard>
+      <View style={styles.actions}>
+        <PrimaryButton onPress={() => navigate(APP_ROUTES.certificates)}>Back to certificates</PrimaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.testResult)}>View source result</SecondaryButton>
       </View>
     </Section>
   );
 }
 
-type ProfileFoundationProps = {
-  user: UserProfile;
-};
-
-function ProfileFoundation({ user }: ProfileFoundationProps) {
+function ProfilePage({ navigate, onLogout, user }: NavigationProps & { onLogout: () => void; user: UserProfile }) {
   return (
-    <Section
-      title="Profile Foundation"
-      eyebrow="Account"
-      subtitle="Profile surfaces now share stat cards and branded account typography."
-    >
+    <Section eyebrow="Account" subtitle="Profile route for learner identity, history, and account actions." title="Profile">
       <View style={styles.metricGrid}>
         <StatCard label="Learner" value={user.name} />
-        <StatCard label="Plan" value={user.plan} />
-        <StatCard label="Session model" value="Local" />
+        <StatCard label="Email" value={user.email} />
+        <StatCard label="Current plan" value={user.plan} />
+      </View>
+      <View style={styles.actions}>
+        <PrimaryButton onPress={() => navigate(APP_ROUTES.settings)}>Settings</PrimaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.subscription)}>Subscription</SecondaryButton>
+        <SecondaryButton onPress={onLogout}>Logout</SecondaryButton>
       </View>
     </Section>
   );
 }
 
-function AdminFoundation() {
+function SettingsPage({ navigate }: NavigationProps) {
   return (
-    <Section
-      title="Admin Foundation"
-      eyebrow="Operations"
-      subtitle="The admin foundation lists backend and platform integrations using the reusable table component."
-    >
-      <Table columns={serviceColumns} getRowKey={(row) => row.name} rows={serviceReadiness} />
-    </Section>
-  );
-}
-
-function LegalFoundation() {
-  return (
-    <Section
-      title="Legal Foundation"
-      eyebrow="Compliance"
-      subtitle="Legal and privacy pages share the same card and text hierarchy as product modules."
-    >
+    <Section eyebrow="Preferences" subtitle="Settings route links account, legal, and subscription areas." title="Settings">
       <View style={styles.cardGrid}>
-        {legalPages.map((page) => (
-          <AppCard key={page.id} style={styles.flexCard}>
-            <Badge tone="neutral">{page.id}</Badge>
-            <Text style={styles.cardTitle}>{page.title}</Text>
-            <Text style={styles.copy}>{page.summary}</Text>
-          </AppCard>
-        ))}
+        <RouteCard badge="Privacy" copy="Review the public privacy policy route." onPress={() => navigate(APP_ROUTES.privacyPolicy)} title="Privacy Policy" />
+        <RouteCard badge="Legal" copy="Review the public terms route." onPress={() => navigate(APP_ROUTES.terms)} title="Terms and Conditions" />
+        <RouteCard badge="Billing" copy="Manage plan and future billing portal state." onPress={() => navigate(APP_ROUTES.subscription)} title="Subscription" />
       </View>
     </Section>
   );
+}
+
+function SubscriptionPage({ navigate }: NavigationProps) {
+  return (
+    <Section eyebrow="Billing" subtitle="Authenticated subscription route ready for Stripe Checkout and entitlement logic." title="Subscription">
+      <PricingPage isAuthenticated navigate={navigate} />
+    </Section>
+  );
+}
+
+function AdminDashboardPage({ navigate }: NavigationProps) {
+  return (
+    <Section eyebrow="Admin" subtitle="Protected admin route for platform readiness and future content operations." title="Admin dashboard">
+      <Table columns={serviceColumns} getRowKey={(row) => row.name} rows={serviceReadiness} />
+      <View style={styles.actions}>
+        <PrimaryButton onPress={() => navigate(APP_ROUTES.certifications)}>Manage catalogue</PrimaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.tests)}>Review test routes</SecondaryButton>
+      </View>
+    </Section>
+  );
+}
+
+type RouteCardProps = {
+  badge: string;
+  copy: string;
+  onPress: () => void;
+  title: string;
+};
+
+function RouteCard({ badge, copy, onPress, title }: RouteCardProps) {
+  return (
+    <AppCard style={styles.flexCard}>
+      <Badge tone="info">{badge}</Badge>
+      <Text style={styles.cardTitle}>{title}</Text>
+      <Text style={styles.copy}>{copy}</Text>
+      <PrimaryButton onPress={onPress}>Open</PrimaryButton>
+    </AppCard>
+  );
+}
+
+function CenteredForm({ children }: { children: ReactNode }) {
+  return <View style={styles.centeredForm}>{children}</View>;
 }
 
 type SectionProps = {
-  children: React.ReactNode;
+  children: ReactNode;
   eyebrow: string;
   subtitle?: string;
   title: string;
@@ -385,6 +752,30 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: theme.spacing.sm
   },
+  activeBreadcrumbText: {
+    color: theme.colors.text
+  },
+  breadcrumbs: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.xs
+  },
+  breadcrumbItem: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: theme.spacing.xs
+  },
+  breadcrumbSeparator: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '900'
+  },
+  breadcrumbText: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase'
+  },
   cardGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -396,32 +787,85 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     lineHeight: 22
   },
+  centeredForm: {
+    alignSelf: 'center',
+    maxWidth: 560,
+    width: '100%'
+  },
+  certificateBrand: {
+    color: theme.colors.primary,
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: 'center'
+  },
+  certificatePreview: {
+    alignItems: 'center',
+    borderColor: theme.colors.primary,
+    gap: theme.spacing.md,
+    padding: theme.spacing.xl
+  },
+  certificateTitle: {
+    color: theme.colors.text,
+    fontSize: 28,
+    fontWeight: '900',
+    textAlign: 'center'
+  },
   copy: {
     color: theme.colors.textMuted,
     fontSize: 14,
     lineHeight: 21
+  },
+  examCard: {
+    gap: theme.spacing.md
   },
   flexCard: {
     flexBasis: 250,
     flexGrow: 1
   },
   formCard: {
-    gap: theme.spacing.md,
-    maxWidth: 560
+    gap: theme.spacing.md
   },
   hero: {
     gap: theme.spacing.md,
     padding: theme.spacing.xl
+  },
+  heroCopy: {
+    color: theme.colors.textMuted,
+    fontSize: 16,
+    lineHeight: 25,
+    maxWidth: 780
+  },
+  heroTitle: {
+    color: theme.colors.text,
+    fontSize: 44,
+    fontWeight: '900',
+    lineHeight: 50
+  },
+  inlineActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm
+  },
+  landingHero: {
+    gap: theme.spacing.lg,
+    paddingVertical: theme.spacing.xxl
   },
   metricGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: theme.spacing.md
   },
+  optionCard: {
+    backgroundColor: theme.colors.surface
+  },
   price: {
     color: theme.colors.primary,
     fontSize: 22,
     fontWeight: '900'
+  },
+  routeHeading: {
+    gap: theme.spacing.sm
   },
   row: {
     alignItems: 'center',

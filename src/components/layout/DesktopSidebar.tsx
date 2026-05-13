@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { APP_ROUTES, PRIMARY_NAVIGATION } from '@/constants/routes';
+import { DESKTOP_SECONDARY_NAVIGATION, PRIMARY_NAVIGATION } from '@/constants/routes';
 import { theme } from '@/constants/theme';
 import type { AppRoute } from '@/types';
 import { AppLogo } from './AppLogo';
@@ -7,22 +7,34 @@ import { AppLogo } from './AppLogo';
 type DesktopSidebarProps = {
   activeRoute: AppRoute;
   navigate: (route: AppRoute) => void;
+  onLogout: () => void;
   routeLabels: Record<AppRoute, string>;
 };
 
-const SECONDARY_ROUTES = [APP_ROUTES.auth, APP_ROUTES.certifications, APP_ROUTES.questions, APP_ROUTES.subscriptions, APP_ROUTES.admin, APP_ROUTES.legal] as const;
-
-export function DesktopSidebar({ activeRoute, navigate, routeLabels }: DesktopSidebarProps) {
+export function DesktopSidebar({ activeRoute, navigate, onLogout, routeLabels }: DesktopSidebarProps) {
   return (
     <View style={styles.sidebar}>
       <AppLogo />
       <View style={styles.group}>
         <Text style={styles.groupLabel}>Workspace</Text>
-        {[...PRIMARY_NAVIGATION, ...SECONDARY_ROUTES].map((route) => (
+        {PRIMARY_NAVIGATION.map((route) => (
           <Pressable key={route} onPress={() => navigate(route)} style={[styles.item, activeRoute === route && styles.activeItem]}>
             <Text style={[styles.label, activeRoute === route && styles.activeLabel]}>{routeLabels[route]}</Text>
           </Pressable>
         ))}
+      </View>
+      <View style={styles.group}>
+        <Text style={styles.groupLabel}>Manage</Text>
+        {DESKTOP_SECONDARY_NAVIGATION.map((route) => (
+          <Pressable key={route} onPress={() => navigate(route)} style={[styles.item, activeRoute === route && styles.activeItem]}>
+            <Text style={[styles.label, activeRoute === route && styles.activeLabel]}>{routeLabels[route]}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <View style={styles.footer}>
+        <Pressable onPress={onLogout} style={styles.logout}>
+          <Text style={styles.logoutLabel}>Sign out</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -52,6 +64,21 @@ const styles = StyleSheet.create({
   },
   label: {
     color: theme.colors.textMuted,
+    fontSize: 14,
+    fontWeight: '900'
+  },
+  footer: {
+    marginTop: 'auto'
+  },
+  logout: {
+    borderColor: theme.colors.border,
+    borderRadius: theme.radii.md,
+    borderWidth: 1,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 11
+  },
+  logoutLabel: {
+    color: theme.colors.text,
     fontSize: 14,
     fontWeight: '900'
   },

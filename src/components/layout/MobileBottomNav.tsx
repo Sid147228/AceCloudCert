@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { PRIMARY_NAVIGATION } from '@/constants/routes';
+import { MOBILE_NAVIGATION } from '@/constants/routes';
 import { theme } from '@/constants/theme';
 import type { AppRoute } from '@/types';
 
@@ -12,7 +12,7 @@ type MobileBottomNavProps = {
 export function MobileBottomNav({ activeRoute, navigate, routeLabels }: MobileBottomNavProps) {
   return (
     <View style={styles.nav}>
-      {PRIMARY_NAVIGATION.map((route) => (
+      {MOBILE_NAVIGATION.map((route) => (
         <Pressable
           key={route}
           onPress={() => navigate(route)}

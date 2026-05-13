@@ -4,7 +4,7 @@ import { defineFeature } from '@/lib/featureModule';
 export const adminFeature = defineFeature({
   id: 'admin',
   name: 'Admin',
-  route: APP_ROUTES.admin,
+  route: APP_ROUTES.adminDashboard,
   summary: 'Future content operations for questions, topics, certification tracks, and publishing workflow.',
   status: 'planned',
   ownerDomain: 'Operations'

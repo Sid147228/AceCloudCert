@@ -4,7 +4,7 @@ import { defineFeature } from '@/lib/featureModule';
 export const legalFeature = defineFeature({
   id: 'legal',
   name: 'Legal',
-  route: APP_ROUTES.legal,
+  route: APP_ROUTES.privacyPolicy,
   summary: 'Privacy, terms, cookie policy, data handling notices, and consent record architecture.',
   status: 'foundation',
   ownerDomain: 'Compliance'

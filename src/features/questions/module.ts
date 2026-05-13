@@ -4,7 +4,7 @@ import { defineFeature } from '@/lib/featureModule';
 export const questionsFeature = defineFeature({
   id: 'questions',
   name: 'Question Bank',
-  route: APP_ROUTES.questions,
+  route: APP_ROUTES.tests,
   summary: 'Typed question model, domains, difficulty, explanations, versioning, and admin review workflow.',
   status: 'foundation',
   ownerDomain: 'Content Quality'
