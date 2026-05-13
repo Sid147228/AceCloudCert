@@ -1,0 +1,28 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "allowJs": false,
+    "baseUrl": ".",
+    "jsx": "react-native",
+    "noEmit": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUncheckedIndexedAccess": true,
+    "paths": {
+      "@/*": ["src/*"],
+      "@/app/*": ["src/app/*"],
+      "@/components/*": ["src/components/*"],
+      "@/constants/*": ["src/constants/*"],
+      "@/data/*": ["src/data/*"],
+      "@/features/*": ["src/features/*"],
+      "@/hooks/*": ["src/hooks/*"],
+      "@/lib/*": ["src/lib/*"],
+      "@/services/*": ["src/services/*"],
+      "@/types/*": ["src/types/*"],
+      "@/utils/*": ["src/utils/*"]
+    },
+    "strict": true
+  },
+  "include": ["App.tsx", "src/**/*.ts", "src/**/*.tsx"]
+}
