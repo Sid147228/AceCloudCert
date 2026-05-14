@@ -69,10 +69,15 @@ export type Question = {
 
 export type KnowledgeTopic = {
   id: string;
+  certificationId: string;
   title: string;
-  domain: string;
+  category: string;
+  estimatedReadingMinutes: number;
   summary: string;
-  bullets: readonly string[];
+  fullExplanation: readonly string[];
+  keyPoints: readonly string[];
+  practicalExample: string;
+  relatedQuestionIds: readonly string[];
 };
 
 export type SubscriptionPlan = {

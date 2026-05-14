@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AppCard, FeatureCard, StatCard } from '@/components/cards';
 import { DomainProgressList } from '@/components/charts';
-import { SelectField } from '@/components/forms';
+import { InputField, SelectField } from '@/components/forms';
 import { AppShell, SectionHeader } from '@/components/layout';
 import { Badge, EmptyState, LoadingState, Modal, PrimaryButton, ProgressBar, SecondaryButton, Table, Tabs, ToastNotification } from '@/components/ui';
 import type { TableColumn } from '@/components/ui';
@@ -16,6 +16,8 @@ import { EmailVerificationNotice, ForgotPasswordForm, LoginForm, SignupForm } fr
 import type { AuthUser } from '@/features/auth';
 import { CertificationCatalogue, CertificationDetail } from '@/features/certifications/components';
 import type { CertificationFilters } from '@/features/certifications';
+import { filterKnowledgeTopics, getKnowledgeCategories, getRelatedQuestions } from '@/features/knowledge-base';
+import type { KnowledgeTopicFilters } from '@/features/knowledge-base';
 import {
   EMPTY_TEST_ANALYTICS,
   TEST_MODE_CONFIGS,
@@ -52,7 +54,7 @@ import { featureModules } from '@/features';
 import { useAppNavigation } from '@/hooks';
 import { getAvailableFeatures } from '@/lib';
 import { analyticsService, serviceReadiness, testService } from '@/services';
-import type { AppRoute, Certification, LegalPage, ServiceReadinessItem, UserProfile } from '@/types';
+import type { AppRoute, Certification, KnowledgeTopic, LegalPage, ServiceReadinessItem, UserProfile } from '@/types';
 import { calculateReadinessScore, countQuestionsByDomain, formatCount, formatPercent } from '@/utils';
 
 const authEntryRoutes = new Set<AppRoute>([APP_ROUTES.login, APP_ROUTES.signup, APP_ROUTES.forgotPassword]);
@@ -99,6 +101,11 @@ function AceCloudCertRoutes() {
     provider: 'All',
     search: ''
   });
+  const [knowledgeFilters, setKnowledgeFilters] = useState<KnowledgeTopicFilters>({
+    category: 'All',
+    search: ''
+  });
+  const [selectedKnowledgeTopicId, setSelectedKnowledgeTopicId] = useState('cloud-computing');
   const [selectedCertificationId, setSelectedCertificationId] = useState(DEFAULT_CERTIFICATION_ID);
   const [selectedTestDomain, setSelectedTestDomain] = useState('Cloud concepts');
   const [selectedTestMode, setSelectedTestMode] = useState<TestModeId>('full-mock');
@@ -112,6 +119,8 @@ function AceCloudCertRoutes() {
   const availableFeatures = useMemo(() => getAvailableFeatures(featureModules), []);
   const selectedCertification =
     certifications.find((certification) => certification.id === selectedCertificationId) ?? certifications[0];
+  const selectedKnowledgeTopic =
+    knowledgeTopics.find((topic) => topic.id === selectedKnowledgeTopicId) ?? knowledgeTopics[0];
   const selectedTestModeConfig = getTestModeConfig(selectedTestMode);
   const userProfile = profile ? toUserProfile(profile) : null;
   const activeMenuRoute =
@@ -227,6 +236,17 @@ function AceCloudCertRoutes() {
     }
 
     navigate(APP_ROUTES.certificationDetail);
+  }
+
+  function openKnowledgeTopic(topic: KnowledgeTopic) {
+    setSelectedKnowledgeTopicId(topic.id);
+    navigate(APP_ROUTES.knowledgeTopicDetail);
+  }
+
+  function startKnowledgeTopicQuiz(topic: KnowledgeTopic) {
+    setSelectedTestMode('topic-quiz');
+    setSelectedTestDomain(topic.category);
+    navigate(APP_ROUTES.quiz);
   }
 
   function openTestMode(mode: TestModeId) {
@@ -477,9 +497,19 @@ function AceCloudCertRoutes() {
       ) : activeRoute === APP_ROUTES.testReview ? (
         <TestReviewPage attempt={latestAttempt} navigate={navigate} />
       ) : activeRoute === APP_ROUTES.knowledgeBase ? (
-        <KnowledgeBasePage navigate={navigate} />
+        <KnowledgeBasePage
+          filters={knowledgeFilters}
+          navigate={navigate}
+          onFiltersChange={setKnowledgeFilters}
+          onOpenTopic={openKnowledgeTopic}
+          onStartQuiz={startKnowledgeTopicQuiz}
+        />
       ) : activeRoute === APP_ROUTES.knowledgeTopicDetail ? (
-        <KnowledgeTopicDetailPage navigate={navigate} />
+        <KnowledgeTopicDetailPage
+          navigate={navigate}
+          onStartQuiz={startKnowledgeTopicQuiz}
+          topic={selectedKnowledgeTopic}
+        />
       ) : activeRoute === APP_ROUTES.certificates ? (
         profile ? <CertificatesPage navigate={navigate} profile={profile} /> : showProtectedFallback()
       ) : activeRoute === APP_ROUTES.certificateDetail ? (
@@ -1379,16 +1409,70 @@ function TestReviewPage({ attempt, navigate }: NavigationProps & { attempt: Test
   );
 }
 
-function KnowledgeBasePage({ navigate }: NavigationProps) {
+function KnowledgeBasePage({
+  filters,
+  onFiltersChange,
+  onOpenTopic,
+  onStartQuiz
+}: NavigationProps & {
+  filters: KnowledgeTopicFilters;
+  onFiltersChange: (filters: KnowledgeTopicFilters) => void;
+  onOpenTopic: (topic: KnowledgeTopic) => void;
+  onStartQuiz: (topic: KnowledgeTopic) => void;
+}) {
+  const categories = getKnowledgeCategories(knowledgeTopics);
+  const filteredTopics = filterKnowledgeTopics(knowledgeTopics, filters);
+  const categoryOptions = [{ label: 'All', value: 'All' }, ...categories.map((category) => ({ label: category, value: category }))];
+
   return (
-    <Section eyebrow="Study" subtitle="Knowledge cards route to the topic detail layout." title="Knowledge base">
+    <Section
+      eyebrow="Study"
+      subtitle="Search AWS Cloud Practitioner study guides, filter by domain, and launch related quizzes."
+      title="Knowledge base"
+    >
+      <AppCard style={styles.filterCard}>
+        <InputField
+          label="Search topics"
+          onChangeText={(search) => onFiltersChange({ ...filters, search })}
+          placeholder="Search IAM, VPC, billing, CloudTrail..."
+          value={filters.search}
+        />
+        <SelectField
+          label="Category"
+          onChange={(category) => onFiltersChange({ ...filters, category })}
+          options={categoryOptions}
+          value={filters.category}
+        />
+      </AppCard>
+
+      <View style={styles.metricGrid}>
+        <StatCard label="AWS CCP topics" value={knowledgeTopics.length} />
+        <StatCard label="Visible topics" value={filteredTopics.length} />
+        <StatCard label="Categories" value={categories.length} />
+      </View>
+
+      {filteredTopics.length === 0 ? (
+        <EmptyState
+          actionLabel="Clear filters"
+          description="Try a different keyword or reset to all categories."
+          onAction={() => onFiltersChange({ category: 'All', search: '' })}
+          title="No topics found"
+        />
+      ) : null}
+
       <View style={styles.cardGrid}>
-        {knowledgeTopics.map((topic) => (
+        {filteredTopics.map((topic) => (
           <AppCard key={topic.id} style={styles.flexCard}>
-            <Badge tone="info">{topic.domain}</Badge>
+            <View style={styles.row}>
+              <Badge tone="info">{topic.category}</Badge>
+              <Text style={styles.dateText}>{topic.estimatedReadingMinutes} min</Text>
+            </View>
             <Text style={styles.cardTitle}>{topic.title}</Text>
             <Text style={styles.copy}>{topic.summary}</Text>
-            <PrimaryButton onPress={() => navigate(APP_ROUTES.knowledgeTopicDetail)}>Open topic</PrimaryButton>
+            <View style={styles.actions}>
+              <PrimaryButton onPress={() => onOpenTopic(topic)}>Open topic</PrimaryButton>
+              <SecondaryButton onPress={() => onStartQuiz(topic)}>Related quiz</SecondaryButton>
+            </View>
           </AppCard>
         ))}
       </View>
@@ -1396,20 +1480,82 @@ function KnowledgeBasePage({ navigate }: NavigationProps) {
   );
 }
 
-function KnowledgeTopicDetailPage({ navigate }: NavigationProps) {
-  const topic = knowledgeTopics.find((item) => item.id === 'iam-basics') ?? knowledgeTopics[0];
+function KnowledgeTopicDetailPage({
+  navigate,
+  onStartQuiz,
+  topic
+}: NavigationProps & {
+  onStartQuiz: (topic: KnowledgeTopic) => void;
+  topic: KnowledgeTopic | undefined;
+}) {
+  if (!topic) {
+    return (
+      <Section eyebrow="Study topic" subtitle="Choose a topic from the knowledge base." title="Knowledge topic detail">
+        <EmptyState
+          actionLabel="Back to knowledge base"
+          description="No topic is currently selected."
+          onAction={() => navigate(APP_ROUTES.knowledgeBase)}
+          title="Topic not found"
+        />
+      </Section>
+    );
+  }
+
+  const relatedQuestions = getRelatedQuestions(topic);
 
   return (
-    <Section eyebrow={topic?.domain ?? 'Study topic'} subtitle={topic?.summary} title={topic?.title ?? 'Knowledge topic detail'}>
-      <AppCard>
-        {(topic?.bullets ?? ['Structured notes', 'Related quiz route', 'Progress tracking ready']).map((bullet) => (
-          <Text key={bullet} style={styles.copy}>
-            - {bullet}
+    <Section eyebrow={topic.category} subtitle={topic.summary} title={topic.title}>
+      <View style={styles.metricGrid}>
+        <StatCard label="Reading time" value={`${topic.estimatedReadingMinutes}m`} />
+        <StatCard label="Related questions" value={relatedQuestions.length} />
+        <StatCard label="Certification" value="AWS CCP" />
+      </View>
+
+      <AppCard style={styles.topicSection}>
+        <Text style={styles.cardTitle}>Full explanation</Text>
+        {topic.fullExplanation.map((paragraph) => (
+          <Text key={paragraph} style={styles.copy}>
+            {paragraph}
           </Text>
         ))}
       </AppCard>
+
+      <View style={styles.cardGrid}>
+        <AppCard style={styles.flexCard}>
+          <Text style={styles.cardTitle}>Key points</Text>
+          {topic.keyPoints.map((point) => (
+            <Text key={point} style={styles.copy}>
+              - {point}
+            </Text>
+          ))}
+        </AppCard>
+
+        <AppCard style={styles.flexCard}>
+          <Text style={styles.cardTitle}>Practical example</Text>
+          <Text style={styles.copy}>{topic.practicalExample}</Text>
+        </AppCard>
+      </View>
+
+      <AppCard style={styles.topicSection}>
+        <View style={styles.row}>
+          <Text style={styles.cardTitle}>Related questions</Text>
+          <Badge tone="neutral">{relatedQuestions.length} linked</Badge>
+        </View>
+        {relatedQuestions.map((question) => (
+          <View key={question.id} style={styles.relatedQuestion}>
+            <View style={styles.row}>
+              <Badge tone={question.difficulty === 'hard' ? 'danger' : question.difficulty === 'medium' ? 'info' : 'success'}>
+                {question.difficulty}
+              </Badge>
+              <Text style={styles.dateText}>{question.domain}</Text>
+            </View>
+            <Text style={styles.copyStrong}>{question.questionText}</Text>
+          </View>
+        ))}
+      </AppCard>
+
       <View style={styles.actions}>
-        <PrimaryButton onPress={() => navigate(APP_ROUTES.quiz)}>Start related quiz</PrimaryButton>
+        <PrimaryButton onPress={() => onStartQuiz(topic)}>Start related quiz</PrimaryButton>
         <SecondaryButton onPress={() => navigate(APP_ROUTES.knowledgeBase)}>Back to knowledge base</SecondaryButton>
       </View>
     </Section>
@@ -1694,6 +1840,9 @@ const styles = StyleSheet.create({
     flexBasis: 250,
     flexGrow: 1
   },
+  filterCard: {
+    gap: theme.spacing.md
+  },
   hero: {
     gap: theme.spacing.md,
     padding: theme.spacing.xl
@@ -1796,6 +1945,14 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     lineHeight: 19
   },
+  relatedQuestion: {
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radii.md,
+    borderWidth: 1,
+    gap: theme.spacing.xs,
+    padding: theme.spacing.md
+  },
   resumeCard: {
     borderColor: theme.colors.primary
   },
@@ -1887,5 +2044,8 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     fontSize: 16,
     fontWeight: '900'
+  },
+  topicSection: {
+    gap: theme.spacing.md
   }
 });
