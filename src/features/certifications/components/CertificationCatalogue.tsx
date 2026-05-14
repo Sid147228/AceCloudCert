@@ -1,7 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 import { EmptyState } from '@/components/ui';
 import { certifications } from '@/data';
-import type { Certification } from '@/types';
+import type { Certification, UserPlan } from '@/types';
 import { theme } from '@/constants/theme';
 import { filterCertifications } from '../helpers';
 import type { CertificationFilters as Filters } from '../types';
@@ -13,13 +13,15 @@ type CertificationCatalogueProps = {
   onFiltersChange: (filters: Filters) => void;
   onOpenCertification: (certification: Certification) => void;
   onPrimaryAction: (certification: Certification) => void;
+  plan: UserPlan;
 };
 
 export function CertificationCatalogue({
   filters,
   onFiltersChange,
   onOpenCertification,
-  onPrimaryAction
+  onPrimaryAction,
+  plan
 }: CertificationCatalogueProps) {
   const filteredCertifications = filterCertifications(certifications, filters);
 
@@ -39,6 +41,7 @@ export function CertificationCatalogue({
               key={certification.id}
               onOpen={onOpenCertification}
               onPrimaryAction={onPrimaryAction}
+              plan={plan}
             />
           ))}
         </View>

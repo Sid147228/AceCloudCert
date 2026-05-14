@@ -1,9 +1,11 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { AppCard, StatCard } from '@/components/cards';
 import { Badge, PrimaryButton, ProgressBar, SecondaryButton, ToastNotification } from '@/components/ui';
+import { DEFAULT_CERTIFICATION_ID } from '@/constants/app';
 import { theme } from '@/constants/theme';
-import type { Certification } from '@/types';
+import type { Certification, UserPlan } from '@/types';
 import { formatCount, formatPercent } from '@/utils';
+import { canStartTestMode, getEffectiveCertificationStatus } from '@/features/subscriptions';
 import { getCertificationCtaLabel, getCertificationStatusTone } from '../helpers';
 
 type CertificationDetailProps = {
@@ -12,6 +14,7 @@ type CertificationDetailProps = {
   onMockTest: () => void;
   onPrimaryAction: (certification: Certification) => void;
   onStartLearning: () => void;
+  plan: UserPlan;
 };
 
 export function CertificationDetail({
@@ -19,10 +22,14 @@ export function CertificationDetail({
   onBack,
   onMockTest,
   onPrimaryAction,
-  onStartLearning
+  onStartLearning,
+  plan
 }: CertificationDetailProps) {
-  const active = certification.status === 'active';
-  const locked = certification.status === 'locked';
+  const effectiveStatus = getEffectiveCertificationStatus(plan, certification);
+  const contentAvailable = certification.id === DEFAULT_CERTIFICATION_ID;
+  const active = effectiveStatus === 'active' && contentAvailable;
+  const locked = effectiveStatus === 'locked';
+  const canStartMock = active && canStartTestMode(plan, 'full-mock');
 
   return (
     <View style={styles.wrap}>
@@ -31,7 +38,7 @@ export function CertificationDetail({
           <View style={styles.titleBlock}>
             <View style={styles.badges}>
               <Badge>{certification.provider}</Badge>
-              <Badge tone={getCertificationStatusTone(certification.status)}>{certification.status}</Badge>
+              <Badge tone={getCertificationStatusTone(effectiveStatus)}>{effectiveStatus}</Badge>
               <Badge tone="info">{certification.examCode}</Badge>
             </View>
             <Text style={styles.title}>{certification.name}</Text>
@@ -63,10 +70,17 @@ export function CertificationDetail({
             tone="info"
           />
         ) : null}
+        {effectiveStatus === 'active' && !contentAvailable ? (
+          <ToastNotification
+            message="Your plan unlocks this certification route, but full learning content for this path is scheduled for a future content wave."
+            title="Roadmap content"
+            tone="info"
+          />
+        ) : null}
         <View style={styles.actions}>
-          <PrimaryButton onPress={() => onPrimaryAction(certification)}>{getCertificationCtaLabel(certification)}</PrimaryButton>
-          <SecondaryButton disabled={!active} onPress={active ? onMockTest : undefined}>
-            Start mock test
+          <PrimaryButton onPress={() => onPrimaryAction(certification)}>{getCertificationCtaLabel(certification, plan)}</PrimaryButton>
+          <SecondaryButton disabled={!canStartMock} onPress={canStartMock ? onMockTest : undefined}>
+            {canStartMock ? 'Start mock test' : 'Mock exam requires Silver'}
           </SecondaryButton>
           <SecondaryButton disabled={!active} onPress={active ? onStartLearning : undefined}>
             Continue learning

@@ -1,4 +1,4 @@
-import type { Question } from '@/types';
+import type { Question, UserPlan } from '@/types';
 
 export type TestModeId = 'full-mock' | 'quick-quiz' | 'topic-quiz' | 'weak-area-practice';
 
@@ -103,5 +103,6 @@ export type StartTestInput = {
   certificationId: string;
   domain?: string;
   mode: TestModeId;
+  plan?: UserPlan;
   userId: string;
 };

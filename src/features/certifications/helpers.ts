@@ -1,4 +1,7 @@
 import type { Certification } from '@/types';
+import type { UserPlan } from '@/types';
+import { DEFAULT_CERTIFICATION_ID } from '@/constants/app';
+import { getEffectiveCertificationStatus } from '@/features/subscriptions';
 import type { CertificationFilters } from './types';
 
 export function getCertificationStatusTone(status: Certification['status']) {
@@ -7,12 +10,14 @@ export function getCertificationStatusTone(status: Certification['status']) {
   return 'neutral';
 }
 
-export function getCertificationCtaLabel(certification: Certification) {
-  if (certification.status === 'active') {
-    return 'Start learning';
+export function getCertificationCtaLabel(certification: Certification, plan: UserPlan = 'Free') {
+  const effectiveStatus = getEffectiveCertificationStatus(plan, certification);
+
+  if (effectiveStatus === 'active') {
+    return certification.id === DEFAULT_CERTIFICATION_ID ? 'Start learning' : 'View roadmap';
   }
 
-  if (certification.status === 'locked') {
+  if (effectiveStatus === 'locked') {
     return `Upgrade to ${certification.planRequirement}`;
   }
 

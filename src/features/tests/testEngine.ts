@@ -1,5 +1,6 @@
 import { DEFAULT_CERTIFICATION_ID, PASS_MARK_PERCENT } from '@/constants/app';
 import { questionBank } from '@/data';
+import { getQuestionsByPlan } from '@/features/questions';
 import type { Question } from '@/types';
 import type { DomainBreakdown, StartTestInput, TestAnswer, TestAttempt, TestModeConfig, TestModeId, TestQuestionView, TestSession } from './types';
 
@@ -222,7 +223,9 @@ function selectQuestionsForMode(
   config: TestModeConfig,
   attempts: readonly TestAttempt[]
 ): readonly Question[] {
-  const availableQuestions = questionBank.filter((question) => question.certificationId === input.certificationId);
+  const availableQuestions = getQuestionsByPlan(input.plan ?? 'Free').filter(
+    (question) => question.certificationId === input.certificationId
+  );
 
   if (input.mode === 'topic-quiz') {
     return rotateAndTake(

@@ -2,22 +2,26 @@ import { StyleSheet, Text, View } from 'react-native';
 import { AppCard } from '@/components/cards';
 import { Badge, PrimaryButton, ProgressBar, SecondaryButton } from '@/components/ui';
 import { theme } from '@/constants/theme';
-import type { Certification } from '@/types';
+import type { Certification, UserPlan } from '@/types';
 import { formatCount, formatPercent } from '@/utils';
+import { getEffectiveCertificationStatus } from '@/features/subscriptions';
 import { getCertificationCtaLabel, getCertificationStatusTone } from '../helpers';
 
 type CertificationCardProps = {
   certification: Certification;
   onOpen: (certification: Certification) => void;
   onPrimaryAction: (certification: Certification) => void;
+  plan: UserPlan;
 };
 
-export function CertificationCard({ certification, onOpen, onPrimaryAction }: CertificationCardProps) {
+export function CertificationCard({ certification, onOpen, onPrimaryAction, plan }: CertificationCardProps) {
+  const effectiveStatus = getEffectiveCertificationStatus(plan, certification);
+
   return (
     <AppCard style={styles.card}>
       <View style={styles.row}>
         <Badge>{certification.provider}</Badge>
-        <Badge tone={getCertificationStatusTone(certification.status)}>{certification.status}</Badge>
+        <Badge tone={getCertificationStatusTone(effectiveStatus)}>{effectiveStatus}</Badge>
       </View>
       <View style={styles.header}>
         <Text style={styles.title}>{certification.name}</Text>
@@ -41,7 +45,7 @@ export function CertificationCard({ certification, onOpen, onPrimaryAction }: Ce
         <ProgressBar value={certification.progress} />
       </View>
       <View style={styles.actions}>
-        <PrimaryButton onPress={() => onPrimaryAction(certification)}>{getCertificationCtaLabel(certification)}</PrimaryButton>
+        <PrimaryButton onPress={() => onPrimaryAction(certification)}>{getCertificationCtaLabel(certification, plan)}</PrimaryButton>
         <SecondaryButton onPress={() => onOpen(certification)}>View detail</SecondaryButton>
       </View>
     </AppCard>

@@ -7,7 +7,8 @@ import type {
   UpdateUserProfileInput,
   UserAccountProfile
 } from '@/features/profile';
-import { userService } from '@/services';
+import { subscriptionService, userService } from '@/services';
+import type { UserPlan } from '@/types';
 import { useAuth } from './AuthContext';
 
 type UserProfileContextValue = {
@@ -17,6 +18,7 @@ type UserProfileContextValue = {
   addLearningHistoryItem: (item: LearningHistoryItem) => Promise<UserAccountProfile>;
   profile: UserAccountProfile | null;
   refreshProfile: () => Promise<void>;
+  updatePlan: (plan: UserPlan) => Promise<UserAccountProfile>;
   updateProfile: (input: UpdateUserProfileInput) => Promise<UserAccountProfile>;
   updateSettings: (input: UpdateAccountSettingsInput) => Promise<UserAccountProfile>;
 };
@@ -78,6 +80,16 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
       isProfileLoading,
       profile,
       refreshProfile,
+      updatePlan: async (plan) => {
+        if (!profile) {
+          throw new Error('Profile is not loaded.');
+        }
+
+        setErrorMessage(undefined);
+        const result = await subscriptionService.updatePlan(profile.userId, plan);
+        setProfile(result.profile);
+        return result.profile;
+      },
       updateProfile: async (input) => {
         if (!profile) {
           throw new Error('Profile is not loaded.');

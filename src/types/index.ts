@@ -83,8 +83,12 @@ export type KnowledgeTopic = {
 export type SubscriptionPlan = {
   id: UserPlan;
   name: UserPlan;
+  description: string;
   priceLabel: string;
+  ctaLabel: string;
   features: readonly string[];
+  limitations: readonly string[];
+  stripePriceLookupKey?: string;
 };
 
 export type CertificateRecord = {

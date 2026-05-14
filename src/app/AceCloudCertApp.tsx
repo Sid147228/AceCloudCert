@@ -54,10 +54,17 @@ import {
   ChangePasswordForm,
   EditProfileForm,
   LearningHistoryPanel,
-  ProfileSummary,
-  SubscriptionStatusPanel
+  ProfileSummary
 } from '@/features/profile/components';
 import type { UserAccountProfile } from '@/features/profile';
+import {
+  canAccessCertification,
+  canAccessFeature,
+  canStartTestMode,
+  getEffectiveCertificationStatus,
+  getPlanChangeVerb,
+  getRecommendedUpgradePlan
+} from '@/features/subscriptions';
 import { ROUTE_LABELS, ROUTE_META, getBreadcrumbs, getNavigationRoute, isProtectedRoute } from '@/app/navigation';
 import { useAppNavigation } from '@/hooks';
 import { analyticsService, certificateService, serviceReadiness, testService } from '@/services';
@@ -67,7 +74,9 @@ import type {
   Certification,
   KnowledgeTopic,
   LegalPage,
-  ServiceReadinessItem
+  ServiceReadinessItem,
+  SubscriptionPlan,
+  UserPlan
 } from '@/types';
 import { countQuestionsByDomain, formatCount, formatPercent } from '@/utils';
 
@@ -107,9 +116,11 @@ export default function AceCloudCertApp() {
 function AceCloudCertRoutes() {
   const { activeRoute, navigate: setActiveRoute } = useAppNavigation(APP_ROUTES.landing);
   const { isAuthenticated, isInitializing, logout, status, user } = useAuth();
-  const { addCertificateHistoryItem, addLearningHistoryItem, isProfileLoading, profile } = useUserProfile();
+  const { addCertificateHistoryItem, addLearningHistoryItem, isProfileLoading, profile, updatePlan } = useUserProfile();
   const [redirectAfterLogin, setRedirectAfterLogin] = useState<AppRoute>(APP_ROUTES.dashboard);
   const [activeTestTab, setActiveTestTab] = useState('overview');
+  const [selectedSubscriptionPlan, setSelectedSubscriptionPlan] = useState<UserPlan>('Silver');
+  const [subscriptionNotice, setSubscriptionNotice] = useState<string | null>(null);
   const [certificationFilters, setCertificationFilters] = useState<CertificationFilters>({
     level: 'All',
     provider: 'All',
@@ -247,12 +258,25 @@ function AceCloudCertRoutes() {
   function handleCertificationPrimaryAction(certification: Certification) {
     setSelectedCertificationId(certification.id);
 
-    if (certification.status === 'active') {
+    if (profile && certification.status !== 'coming soon' && !canAccessCertification(profile.plan, certification)) {
+      setSelectedSubscriptionPlan(certification.planRequirement);
+      setSubscriptionNotice(`${certification.name} requires the ${certification.planRequirement} plan.`);
+      navigate(APP_ROUTES.subscription);
+      return;
+    }
+
+    if (getEffectiveCertificationStatus(profile?.plan ?? 'Free', certification) === 'active') {
+      if (certification.id !== DEFAULT_CERTIFICATION_ID) {
+        navigate(APP_ROUTES.certificationDetail);
+        return;
+      }
+
       navigate(APP_ROUTES.knowledgeBase);
       return;
     }
 
     if (certification.status === 'locked') {
+      setSelectedSubscriptionPlan(certification.planRequirement);
       navigate(APP_ROUTES.subscription);
       return;
     }
@@ -272,6 +296,13 @@ function AceCloudCertRoutes() {
   }
 
   function openTestMode(mode: TestModeId) {
+    if (profile && !canStartTestMode(profile.plan, mode)) {
+      setSelectedSubscriptionPlan(getRecommendedUpgradePlan('fullMockExam'));
+      setSubscriptionNotice('Full mock exams are included with Silver and Gold plans.');
+      navigate(APP_ROUTES.subscription);
+      return;
+    }
+
     setSelectedTestMode(mode);
     navigate(mode === 'full-mock' ? APP_ROUTES.mockTest : APP_ROUTES.quiz);
   }
@@ -281,11 +312,19 @@ function AceCloudCertRoutes() {
       return;
     }
 
+    if (profile && !canStartTestMode(profile.plan, mode)) {
+      setSelectedSubscriptionPlan(getRecommendedUpgradePlan('fullMockExam'));
+      setSubscriptionNotice('Upgrade to Silver to unlock full mock exams.');
+      navigate(APP_ROUTES.subscription);
+      return;
+    }
+
     const session = createTestSession(
       {
         certificationId: DEFAULT_CERTIFICATION_ID,
         domain: mode === 'topic-quiz' ? domain : undefined,
         mode,
+        plan: profile?.plan ?? 'Free',
         userId: user.id
       },
       testAttempts
@@ -426,6 +465,14 @@ function AceCloudCertRoutes() {
   }
 
   async function exportCertificate(certificate: CertificateRecord) {
+    if (!canAccessFeature(profile?.plan ?? 'Free', 'certificateDownload')) {
+      setSelectedSubscriptionPlan(getRecommendedUpgradePlan('certificateDownload'));
+      setCertificateNotice('Certificate download is available on Silver and Gold plans.');
+      setSubscriptionNotice('Certificate download is available on Silver and Gold plans.');
+      navigate(APP_ROUTES.subscription);
+      return;
+    }
+
     const html = renderCertificateHtml(certificate);
 
     try {
@@ -474,6 +521,35 @@ function AceCloudCertRoutes() {
     const browserWindow = getBrowserWindow();
     browserWindow?.open?.(createLinkedInShareUrl(certificate), '_blank');
     setCertificateNotice('LinkedIn sharing opened with the certificate verification link.');
+  }
+
+  async function changeSubscriptionPlan(plan: UserPlan) {
+    setSelectedSubscriptionPlan(plan);
+
+    if (!profile) {
+      return;
+    }
+
+    const currentPlan = profile.plan;
+    const updatedProfile = await updatePlan(plan);
+    const action = getPlanChangeVerb(currentPlan, plan).toLowerCase();
+
+    setSubscriptionNotice(
+      currentPlan === plan
+        ? `${updatedProfile.plan} is already your active plan.`
+        : `Mock ${action} complete. ${updatedProfile.plan} is now stored on your local learner profile.`
+    );
+  }
+
+  function selectPricingPlan(plan: UserPlan) {
+    setSelectedSubscriptionPlan(plan);
+
+    if (isAuthenticated) {
+      navigate(APP_ROUTES.subscription);
+      return;
+    }
+
+    navigate(APP_ROUTES.signup);
   }
 
   function showProtectedFallback() {
@@ -534,7 +610,12 @@ function AceCloudCertRoutes() {
           onVerified={completeVerification}
         />
       ) : activeRoute === APP_ROUTES.pricing ? (
-        <PricingPage isAuthenticated={isAuthenticated} navigate={navigate} />
+        <PricingPage
+          currentPlan={profile?.plan}
+          isAuthenticated={isAuthenticated}
+          navigate={navigate}
+          onSelectPlan={selectPricingPlan}
+        />
       ) : activeRoute === APP_ROUTES.privacyPolicy ? (
         <LegalPageContent legalPageId="privacy" />
       ) : activeRoute === APP_ROUTES.terms ? (
@@ -570,6 +651,7 @@ function AceCloudCertRoutes() {
           onFiltersChange={setCertificationFilters}
           onOpenCertification={openCertificationDetail}
           onPrimaryAction={handleCertificationPrimaryAction}
+          plan={profile?.plan ?? 'Free'}
         />
       ) : activeRoute === APP_ROUTES.certificationDetail ? (
         selectedCertification ? (
@@ -577,6 +659,7 @@ function AceCloudCertRoutes() {
             certification={selectedCertification}
             navigate={navigate}
             onPrimaryAction={handleCertificationPrimaryAction}
+            plan={profile?.plan ?? 'Free'}
           />
         ) : (
           showProtectedFallback()
@@ -671,6 +754,7 @@ function AceCloudCertRoutes() {
             onExport={exportCertificate}
             onLinkedInShare={openLinkedInShare}
             onShare={shareCertificate}
+            plan={profile.plan}
           />
         ) : (
           showProtectedFallback()
@@ -697,7 +781,18 @@ function AceCloudCertRoutes() {
           showProtectedFallback()
         )
       ) : activeRoute === APP_ROUTES.subscription ? (
-        profile ? <SubscriptionPage navigate={navigate} profile={profile} /> : showProtectedFallback()
+        profile ? (
+          <SubscriptionPage
+            navigate={navigate}
+            notice={subscriptionNotice}
+            onChangePlan={(plan) => void changeSubscriptionPlan(plan)}
+            onSelectPlan={setSelectedSubscriptionPlan}
+            profile={profile}
+            selectedPlan={selectedSubscriptionPlan}
+          />
+        ) : (
+          showProtectedFallback()
+        )
       ) : (
         <AdminDashboardPage navigate={navigate} />
       )}
@@ -832,33 +927,124 @@ function LandingPage({ isAuthenticated, navigate }: NavigationProps & { isAuthen
   );
 }
 
-function PricingPage({ isAuthenticated, navigate }: NavigationProps & { isAuthenticated: boolean }) {
+function PricingPage({
+  currentPlan,
+  isAuthenticated,
+  onSelectPlan
+}: NavigationProps & {
+  currentPlan?: UserPlan;
+  isAuthenticated: boolean;
+  onSelectPlan: (plan: UserPlan) => void;
+}) {
   return (
     <Section
       eyebrow="Plans"
-      subtitle="Public pricing routes connect to signup for guests and subscription management for authenticated learners."
+      subtitle="Choose Free, Silver, or Gold. Payments are mocked locally now, with Stripe-ready plan keys prepared for checkout later."
       title="Pricing built for self-paced certification prep"
     >
       <View style={styles.cardGrid}>
         {subscriptionPlans.map((plan) => (
-          <AppCard key={plan.id} style={styles.flexCard}>
-            <View style={styles.row}>
-              <Text style={styles.cardTitle}>{plan.name}</Text>
-              {plan.id === 'Free' ? <Badge tone="success">Starter</Badge> : <Badge tone="primary">Upgrade</Badge>}
-            </View>
-            <Text style={styles.price}>{plan.priceLabel}</Text>
-            {plan.features.map((feature) => (
-              <Text key={feature} style={styles.copy}>
-                - {feature}
-              </Text>
-            ))}
-            <PrimaryButton onPress={() => navigate(isAuthenticated ? APP_ROUTES.subscription : APP_ROUTES.signup)}>
-              {isAuthenticated ? 'Manage plan' : 'Choose plan'}
-            </PrimaryButton>
-          </AppCard>
+          <PlanCard
+            currentPlan={currentPlan}
+            isAuthenticated={isAuthenticated}
+            key={plan.id}
+            onSelectPlan={onSelectPlan}
+            plan={plan}
+          />
         ))}
       </View>
+      <PlanComparisonTable />
     </Section>
+  );
+}
+
+function PlanCard({
+  currentPlan,
+  isAuthenticated,
+  onSelectPlan,
+  plan
+}: {
+  currentPlan?: UserPlan;
+  isAuthenticated: boolean;
+  onSelectPlan: (plan: UserPlan) => void;
+  plan: SubscriptionPlan;
+}) {
+  const isCurrent = currentPlan === plan.id;
+
+  return (
+    <AppCard style={[styles.flexCard, isCurrent && styles.currentPlanCard]}>
+      <View style={styles.row}>
+        <Text style={styles.cardTitle}>{plan.name}</Text>
+        {isCurrent ? <Badge tone="success">Current</Badge> : plan.id === 'Gold' ? <Badge tone="primary">Premium</Badge> : <Badge tone="info">Plan</Badge>}
+      </View>
+      <Text style={styles.price}>{plan.priceLabel}</Text>
+      <Text style={styles.copy}>{plan.description}</Text>
+      <View style={styles.verticalStack}>
+        {plan.features.map((feature) => (
+          <Text key={feature} style={styles.copyStrong}>
+            - {feature}
+          </Text>
+        ))}
+        {plan.limitations.map((limitation) => (
+          <Text key={limitation} style={styles.copy}>
+            - {limitation}
+          </Text>
+        ))}
+      </View>
+      <PrimaryButton disabled={isCurrent} onPress={() => onSelectPlan(plan.id)}>
+        {isCurrent ? 'Current plan' : isAuthenticated ? plan.ctaLabel : 'Choose plan'}
+      </PrimaryButton>
+      {plan.stripePriceLookupKey ? <Text style={styles.microCopy}>Stripe key: {plan.stripePriceLookupKey}</Text> : null}
+    </AppCard>
+  );
+}
+
+function PlanComparisonTable() {
+  const rows = [
+    { feature: 'Question bank', Free: 'Limited', Silver: 'Full AWS', Gold: 'All certifications' },
+    { feature: 'Quizzes', Free: 'Limited', Silver: 'Unlimited AWS', Gold: 'Unlimited' },
+    { feature: 'Full mock exams', Free: 'Locked', Silver: 'Included', Gold: 'Included' },
+    { feature: 'Certificate download', Free: 'Locked', Silver: 'Included', Gold: 'Unlimited' },
+    { feature: 'Progress tracking', Free: 'Basic', Silver: 'Included', Gold: 'Advanced' },
+    { feature: 'Premium knowledge base', Free: 'Locked', Silver: 'AWS core', Gold: 'Included' },
+    { feature: 'Future AI tutor', Free: 'Locked', Silver: 'Locked', Gold: 'Included later' }
+  ];
+  const columns: readonly TableColumn<(typeof rows)[number]>[] = [
+    {
+      key: 'feature',
+      minWidth: 220,
+      render: (row) => <Text style={styles.tableText}>{row.feature}</Text>,
+      title: 'Capability'
+    },
+    {
+      key: 'Free',
+      minWidth: 160,
+      render: (row) => <Text style={styles.tableMuted}>{row.Free}</Text>,
+      title: 'Free'
+    },
+    {
+      key: 'Silver',
+      minWidth: 160,
+      render: (row) => <Text style={styles.tableMuted}>{row.Silver}</Text>,
+      title: 'Silver'
+    },
+    {
+      key: 'Gold',
+      minWidth: 180,
+      render: (row) => <Text style={styles.tableMuted}>{row.Gold}</Text>,
+      title: 'Gold'
+    }
+  ];
+
+  return (
+    <View style={styles.verticalStack}>
+      <SectionHeader
+        eyebrow="Comparison"
+        subtitle="Entitlements used by the mock upgrade flow and ready to map to Stripe products."
+        title="Plan comparison"
+      />
+      <Table columns={columns} getRowKey={(row) => row.feature} rows={rows} />
+    </View>
   );
 }
 
@@ -1172,12 +1358,14 @@ function CertificationsPage({
   filters,
   onOpenCertification,
   onFiltersChange,
-  onPrimaryAction
+  onPrimaryAction,
+  plan
 }: {
   filters: CertificationFilters;
   onFiltersChange: (filters: CertificationFilters) => void;
   onOpenCertification: (certification: Certification) => void;
   onPrimaryAction: (certification: Certification) => void;
+  plan: UserPlan;
 }) {
   return (
     <Section
@@ -1190,6 +1378,7 @@ function CertificationsPage({
         onFiltersChange={onFiltersChange}
         onOpenCertification={onOpenCertification}
         onPrimaryAction={onPrimaryAction}
+        plan={plan}
       />
     </Section>
   );
@@ -1198,10 +1387,12 @@ function CertificationsPage({
 function CertificationDetailPage({
   certification,
   navigate,
-  onPrimaryAction
+  onPrimaryAction,
+  plan
 }: NavigationProps & {
   certification: Certification;
   onPrimaryAction: (certification: Certification) => void;
+  plan: UserPlan;
 }) {
   return (
     <Section eyebrow={certification.provider} subtitle="Certification detail, readiness metadata, domains, and access actions." title={certification.name}>
@@ -1211,6 +1402,7 @@ function CertificationDetailPage({
         onMockTest={() => navigate(APP_ROUTES.mockTest)}
         onPrimaryAction={onPrimaryAction}
         onStartLearning={() => navigate(APP_ROUTES.knowledgeBase)}
+        plan={plan}
       />
     </Section>
   );
@@ -1985,13 +2177,15 @@ function CertificateDetailPage({
   notice,
   onExport,
   onLinkedInShare,
-  onShare
+  onShare,
+  plan
 }: NavigationProps & {
   certificate?: CertificateRecord;
   notice: string | null;
   onExport: (certificate: CertificateRecord) => void;
   onLinkedInShare: (certificate: CertificateRecord) => void;
   onShare: (certificate: CertificateRecord) => void;
+  plan: UserPlan;
 }) {
   if (!certificate) {
     return (
@@ -2024,7 +2218,9 @@ function CertificateDetailPage({
         </AppCard>
       </View>
       <View style={styles.actions}>
-        <PrimaryButton onPress={() => void onExport(certificate)}>Download / export</PrimaryButton>
+        <PrimaryButton onPress={() => void onExport(certificate)}>
+          {canAccessFeature(plan, 'certificateDownload') ? 'Download / export' : 'Upgrade to download'}
+        </PrimaryButton>
         <SecondaryButton onPress={() => void onShare(certificate)}>Share text</SecondaryButton>
         <SecondaryButton onPress={() => onLinkedInShare(certificate)}>Open LinkedIn share</SecondaryButton>
         <SecondaryButton onPress={() => navigate(APP_ROUTES.certificates)}>Back to certificates</SecondaryButton>
@@ -2206,14 +2402,85 @@ function CertificateHistoryPage({
   );
 }
 
-function SubscriptionPage({ navigate, profile }: NavigationProps & { profile: UserAccountProfile }) {
+function SubscriptionPage({
+  navigate,
+  notice,
+  onChangePlan,
+  onSelectPlan,
+  profile,
+  selectedPlan
+}: NavigationProps & {
+  notice: string | null;
+  onChangePlan: (plan: UserPlan) => void;
+  onSelectPlan: (plan: UserPlan) => void;
+  profile: UserAccountProfile;
+  selectedPlan: UserPlan;
+}) {
+  const selectedPlanDetails =
+    subscriptionPlans.find((plan) => plan.id === selectedPlan) ??
+    subscriptionPlans.find((plan) => plan.id === profile.plan) ??
+    subscriptionPlans[0];
+  const currentPlanDetails = subscriptionPlans.find((plan) => plan.id === profile.plan) ?? subscriptionPlans[0];
+  const selectedAction = getPlanChangeVerb(profile.plan, selectedPlan);
+
   return (
-    <Section eyebrow="Billing" subtitle="Authenticated subscription status and plan controls." title="Subscription status">
-      <SubscriptionStatusPanel
-        onBack={() => navigate(APP_ROUTES.profile)}
-        onPricing={() => navigate(APP_ROUTES.pricing)}
-        profile={profile}
-      />
+    <Section
+      eyebrow="Billing"
+      subtitle="Mock subscription management with local profile persistence and Stripe-ready plan identifiers."
+      title="Subscription management"
+    >
+      {notice ? <ToastNotification message={notice} title="Subscription update" tone="info" /> : null}
+      <View style={styles.cardGrid}>
+        <AppCard style={styles.flexCard}>
+          <View style={styles.row}>
+            <Badge tone="success">Current plan</Badge>
+            <Text style={styles.price}>{currentPlanDetails?.priceLabel ?? 'GBP 0'}</Text>
+          </View>
+          <Text style={styles.cardTitle}>{profile.plan}</Text>
+          <Text style={styles.copy}>Your active plan is stored on the local learner profile and controls entitlement checks.</Text>
+          {(currentPlanDetails?.features ?? []).map((feature) => (
+            <Text key={feature} style={styles.copyStrong}>
+              - {feature}
+            </Text>
+          ))}
+        </AppCard>
+
+        <AppCard style={styles.flexCard}>
+          <View style={styles.row}>
+            <Badge tone="info">Mock checkout</Badge>
+            <Text style={styles.price}>{selectedPlanDetails?.priceLabel ?? 'GBP 0'}</Text>
+          </View>
+          <Text style={styles.cardTitle}>{selectedAction === 'Current plan' ? 'Manage current plan' : `${selectedAction} to ${selectedPlan}`}</Text>
+          <Text style={styles.copy}>
+            This flow simulates checkout locally. A future Stripe integration can replace this action using the plan lookup key.
+          </Text>
+          <Text style={styles.referenceText}>
+            {selectedPlanDetails?.stripePriceLookupKey ?? 'No Stripe price required for Free'}
+          </Text>
+          <PrimaryButton onPress={() => onChangePlan(selectedPlan)}>
+            {selectedAction === 'Current plan' ? 'Confirm current plan' : `${selectedAction} plan`}
+          </PrimaryButton>
+        </AppCard>
+      </View>
+
+      <View style={styles.cardGrid}>
+        {subscriptionPlans.map((plan) => (
+          <PlanCard
+            currentPlan={profile.plan}
+            isAuthenticated
+            key={plan.id}
+            onSelectPlan={onSelectPlan}
+            plan={plan}
+          />
+        ))}
+      </View>
+
+      <PlanComparisonTable />
+
+      <View style={styles.actions}>
+        <PrimaryButton onPress={() => navigate(APP_ROUTES.pricing)}>Open public pricing</PrimaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.profile)}>Back to profile</SecondaryButton>
+      </View>
     </Section>
   );
 }
@@ -2460,6 +2727,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
     lineHeight: 21
+  },
+  currentPlanCard: {
+    borderColor: theme.colors.primary
   },
   dashboardActionCard: {
     flexBasis: 220,

@@ -51,8 +51,7 @@ function createDefaultProfile(user: AuthUser): UserAccountProfile {
 function mergeAuthFields(profile: UserAccountProfile, user: AuthUser): UserAccountProfile {
   return {
     ...profile,
-    email: user.email,
-    plan: user.plan
+    email: user.email
   };
 }
 
@@ -92,7 +91,7 @@ export const userService: UserService = {
     if (storedProfile) {
       const mergedProfile = mergeAuthFields(storedProfile, user);
 
-      if (storedProfile.email !== mergedProfile.email || storedProfile.plan !== mergedProfile.plan) {
+      if (storedProfile.email !== mergedProfile.email) {
         await userService.saveProfile(mergedProfile);
       }
 
@@ -102,6 +101,11 @@ export const userService: UserService = {
     const profile = createDefaultProfile(user);
     await saveStore({ profiles: [...store.profiles, profile] });
     return profile;
+  },
+
+  async getProfileById(userId: string) {
+    const store = await loadStore();
+    return store.profiles.find((storedProfile) => storedProfile.userId === userId) ?? null;
   },
 
   async saveProfile(profile: UserAccountProfile) {
@@ -130,6 +134,20 @@ export const userService: UserService = {
       ...profile,
       activeCertificationId: input.activeCertificationId,
       fullName: input.fullName.trim()
+    });
+  },
+
+  async updatePlan(userId: string, plan) {
+    const store = await loadStore();
+    const profile = store.profiles.find((storedProfile) => storedProfile.userId === userId);
+
+    if (!profile) {
+      throw new Error('Profile was not found for this user.');
+    }
+
+    return userService.saveProfile({
+      ...profile,
+      plan
     });
   },
 

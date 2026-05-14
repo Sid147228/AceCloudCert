@@ -5,5 +5,6 @@ export { authService, getAuthErrorMessage } from './authService';
 export { certificateService } from './certificateService';
 export { serviceReadiness } from './readiness';
 export { storageService } from './storageService';
+export { subscriptionService } from './subscriptionService';
 export { testService } from './testService';
 export { userService } from './userService';
