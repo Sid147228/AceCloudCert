@@ -2,7 +2,7 @@ import { certifications } from '@/data';
 import type { ProfileStats, UserAccountProfile } from './types';
 
 export function getActiveCertificationTitle(profile: UserAccountProfile) {
-  return certifications.find((certification) => certification.id === profile.activeCertificationId)?.title ?? 'Not selected';
+  return certifications.find((certification) => certification.id === profile.activeCertificationId)?.name ?? 'Not selected';
 }
 
 export function getProfileStats(profile: UserAccountProfile): ProfileStats {

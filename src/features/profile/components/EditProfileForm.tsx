@@ -58,7 +58,7 @@ export function EditProfileForm({ onCancel, onSaved, profile }: EditProfileFormP
           label="Active certification"
           onChange={setActiveCertificationId}
           options={certifications.map((certification) => ({
-            label: certification.title,
+            label: certification.name,
             value: certification.id
           }))}
           value={activeCertificationId}

@@ -22,15 +22,24 @@ export type UserProfile = {
   plan: UserPlan;
 };
 
-export type CertificationStatus = 'active' | 'locked' | 'planned';
+export type CertificationProvider = 'AWS' | 'Microsoft Azure' | 'Google Cloud' | 'Salesforce' | 'Cisco';
+export type CertificationLevel = 'Foundational' | 'Associate' | 'Administrator';
+export type CertificationDifficulty = 'Beginner' | 'Intermediate' | 'Advanced';
+export type CertificationStatus = 'active' | 'locked' | 'coming soon';
 
 export type Certification = {
   id: string;
-  provider: string;
-  title: string;
-  difficulty: 'Foundational' | 'Associate' | 'Professional';
+  provider: CertificationProvider;
+  name: string;
+  level: CertificationLevel;
+  description: string;
+  examCode: string;
+  domains: readonly string[];
   questionCount: number;
+  estimatedStudyHours: number;
+  difficulty: CertificationDifficulty;
   progress: number;
+  planRequirement: UserPlan;
   status: CertificationStatus;
 };
 

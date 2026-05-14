@@ -31,7 +31,7 @@ async function saveStore(store: UserProfileStore) {
 }
 
 function getCertificationTitle(certificationId: string) {
-  return certifications.find((certification) => certification.id === certificationId)?.title ?? 'AWS Certified Cloud Practitioner';
+  return certifications.find((certification) => certification.id === certificationId)?.name ?? 'AWS Certified Cloud Practitioner';
 }
 
 function createDefaultProfile(user: AuthUser): UserAccountProfile {

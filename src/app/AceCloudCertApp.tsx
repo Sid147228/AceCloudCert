@@ -13,6 +13,8 @@ import { AuthProvider, UserProfileProvider, useAuth, useUserProfile } from '@/co
 import { certifications, knowledgeTopics, legalPages, questionBank, subscriptionPlans } from '@/data';
 import { EmailVerificationNotice, ForgotPasswordForm, LoginForm, SignupForm } from '@/features/auth/components';
 import type { AuthUser } from '@/features/auth';
+import { CertificationCatalogue, CertificationDetail } from '@/features/certifications/components';
+import type { CertificationFilters } from '@/features/certifications';
 import {
   AccountSettingsPanel,
   CertificateHistoryPanel,
@@ -29,7 +31,7 @@ import { featureModules } from '@/features';
 import { useAppNavigation } from '@/hooks';
 import { getAvailableFeatures } from '@/lib';
 import { serviceReadiness } from '@/services';
-import type { AppRoute, LegalPage, ServiceReadinessItem, UserProfile } from '@/types';
+import type { AppRoute, Certification, LegalPage, ServiceReadinessItem, UserProfile } from '@/types';
 import { calculateReadinessScore, countQuestionsByDomain, formatCount, formatPercent } from '@/utils';
 
 const authEntryRoutes = new Set<AppRoute>([APP_ROUTES.login, APP_ROUTES.signup, APP_ROUTES.forgotPassword]);
@@ -71,9 +73,17 @@ function AceCloudCertRoutes() {
   const { isProfileLoading, profile } = useUserProfile();
   const [redirectAfterLogin, setRedirectAfterLogin] = useState<AppRoute>(APP_ROUTES.dashboard);
   const [activeTestTab, setActiveTestTab] = useState('overview');
+  const [certificationFilters, setCertificationFilters] = useState<CertificationFilters>({
+    level: 'All',
+    provider: 'All',
+    search: ''
+  });
+  const [selectedCertificationId, setSelectedCertificationId] = useState(DEFAULT_CERTIFICATION_ID);
 
   const domainCounts = useMemo(() => countQuestionsByDomain(questionBank), []);
   const availableFeatures = useMemo(() => getAvailableFeatures(featureModules), []);
+  const selectedCertification =
+    certifications.find((certification) => certification.id === selectedCertificationId) ?? certifications[0];
   const userProfile = profile ? toUserProfile(profile) : null;
   const activeMenuRoute =
     isAuthenticated && !isProtectedRoute(activeRoute) ? getAuthenticatedPublicMenuRoute(activeRoute) : getNavigationRoute(activeRoute);
@@ -106,6 +116,27 @@ function AceCloudCertRoutes() {
       setRedirectAfterLogin(APP_ROUTES.dashboard);
       setActiveRoute(APP_ROUTES.landing);
     });
+  }
+
+  function openCertificationDetail(certification: Certification) {
+    setSelectedCertificationId(certification.id);
+    navigate(APP_ROUTES.certificationDetail);
+  }
+
+  function handleCertificationPrimaryAction(certification: Certification) {
+    setSelectedCertificationId(certification.id);
+
+    if (certification.status === 'active') {
+      navigate(APP_ROUTES.knowledgeBase);
+      return;
+    }
+
+    if (certification.status === 'locked') {
+      navigate(APP_ROUTES.subscription);
+      return;
+    }
+
+    navigate(APP_ROUTES.certificationDetail);
   }
 
   function showProtectedFallback() {
@@ -178,9 +209,22 @@ function AceCloudCertRoutes() {
           showProtectedFallback()
         )
       ) : activeRoute === APP_ROUTES.certifications ? (
-        <CertificationsPage navigate={navigate} />
+        <CertificationsPage
+          filters={certificationFilters}
+          onFiltersChange={setCertificationFilters}
+          onOpenCertification={openCertificationDetail}
+          onPrimaryAction={handleCertificationPrimaryAction}
+        />
       ) : activeRoute === APP_ROUTES.certificationDetail ? (
-        <CertificationDetailPage navigate={navigate} />
+        selectedCertification ? (
+          <CertificationDetailPage
+            certification={selectedCertification}
+            navigate={navigate}
+            onPrimaryAction={handleCertificationPrimaryAction}
+          />
+        ) : (
+          showProtectedFallback()
+        )
       ) : activeRoute === APP_ROUTES.tests ? (
         <TestsPage activeTab={activeTestTab} domainCounts={domainCounts} navigate={navigate} setActiveTab={setActiveTestTab} />
       ) : activeRoute === APP_ROUTES.mockTest ? (
@@ -426,50 +470,50 @@ function DashboardPage({
   );
 }
 
-function CertificationsPage({ navigate }: NavigationProps) {
+function CertificationsPage({
+  filters,
+  onOpenCertification,
+  onFiltersChange,
+  onPrimaryAction
+}: {
+  filters: CertificationFilters;
+  onFiltersChange: (filters: CertificationFilters) => void;
+  onOpenCertification: (certification: Certification) => void;
+  onPrimaryAction: (certification: Certification) => void;
+}) {
   return (
-    <Section eyebrow="Catalogue" subtitle="Certification cards route into the certification detail layout." title="Certification catalogue">
-      <View style={styles.cardGrid}>
-        {certifications.map((certification) => (
-          <AppCard key={certification.id} style={styles.flexCard}>
-            <View style={styles.row}>
-              <Badge>{certification.provider}</Badge>
-              <Badge tone={certification.status === 'active' ? 'success' : 'neutral'}>{certification.status}</Badge>
-            </View>
-            <Text style={styles.cardTitle}>{certification.title}</Text>
-            <Text style={styles.copy}>{certification.difficulty}</Text>
-            <Text style={styles.copy}>{formatCount(certification.questionCount, 'question')}</Text>
-            <ProgressBar value={certification.progress} />
-            <PrimaryButton onPress={() => navigate(APP_ROUTES.certificationDetail)}>
-              {certification.status === 'active' ? 'Open path' : 'View roadmap'}
-            </PrimaryButton>
-          </AppCard>
-        ))}
-      </View>
+    <Section
+      eyebrow="Catalogue"
+      subtitle="Filter certification tracks by provider, level, or search. AWS Cloud Practitioner is active; premium and future paths are clearly marked."
+      title="Certification catalogue"
+    >
+      <CertificationCatalogue
+        filters={filters}
+        onFiltersChange={onFiltersChange}
+        onOpenCertification={onOpenCertification}
+        onPrimaryAction={onPrimaryAction}
+      />
     </Section>
   );
 }
 
-function CertificationDetailPage({ navigate }: NavigationProps) {
+function CertificationDetailPage({
+  certification,
+  navigate,
+  onPrimaryAction
+}: NavigationProps & {
+  certification: Certification;
+  onPrimaryAction: (certification: Certification) => void;
+}) {
   return (
-    <Section
-      eyebrow="AWS Certified Cloud Practitioner"
-      subtitle="Detail route for objectives, progress, available tests, and linked study topics."
-      title="Certification detail layout"
-    >
-      <View style={styles.metricGrid}>
-        <StatCard label="Question bank" value={formatCount(questionBank.length, 'question')} />
-        <StatCard label="Pass target" value={formatPercent(PASS_MARK_PERCENT)} />
-        <StatCard label="Progress" value="64%" />
-      </View>
-      <AppCard>
-        <DomainProgressList domainCounts={countQuestionsByDomain(questionBank)} />
-      </AppCard>
-      <View style={styles.actions}>
-        <PrimaryButton onPress={() => navigate(APP_ROUTES.mockTest)}>Start mock test</PrimaryButton>
-        <SecondaryButton onPress={() => navigate(APP_ROUTES.quiz)}>Start quiz</SecondaryButton>
-        <SecondaryButton onPress={() => navigate(APP_ROUTES.knowledgeTopicDetail)}>Open study topic</SecondaryButton>
-      </View>
+    <Section eyebrow={certification.provider} subtitle="Certification detail, readiness metadata, domains, and access actions." title={certification.name}>
+      <CertificationDetail
+        certification={certification}
+        onBack={() => navigate(APP_ROUTES.certifications)}
+        onMockTest={() => navigate(APP_ROUTES.mockTest)}
+        onPrimaryAction={onPrimaryAction}
+        onStartLearning={() => navigate(APP_ROUTES.knowledgeBase)}
+      />
     </Section>
   );
 }
