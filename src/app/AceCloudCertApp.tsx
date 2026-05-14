@@ -17,8 +17,10 @@ import type { AuthUser } from '@/features/auth';
 import { CertificationCatalogue, CertificationDetail } from '@/features/certifications/components';
 import type { CertificationFilters } from '@/features/certifications';
 import {
+  EMPTY_TEST_ANALYTICS,
   TEST_MODE_CONFIGS,
   answerQuestion,
+  calculateResultInsights,
   createTestSession,
   getAnsweredCount,
   getCurrentQuestionView,
@@ -33,7 +35,7 @@ import {
   submitTestSession,
   toggleQuestionReview
 } from '@/features/tests';
-import type { TestAttempt, TestModeId, TestSession } from '@/features/tests';
+import type { ScoreTrendPoint, TestAnalytics, TestAttempt, TestModeId, TestSession } from '@/features/tests';
 import {
   AccountSettingsPanel,
   CertificateHistoryPanel,
@@ -49,7 +51,7 @@ import { ROUTE_LABELS, ROUTE_META, getBreadcrumbs, getNavigationRoute, isProtect
 import { featureModules } from '@/features';
 import { useAppNavigation } from '@/hooks';
 import { getAvailableFeatures } from '@/lib';
-import { serviceReadiness, testService } from '@/services';
+import { analyticsService, serviceReadiness, testService } from '@/services';
 import type { AppRoute, Certification, LegalPage, ServiceReadinessItem, UserProfile } from '@/types';
 import { calculateReadinessScore, countQuestionsByDomain, formatCount, formatPercent } from '@/utils';
 
@@ -101,6 +103,7 @@ function AceCloudCertRoutes() {
   const [selectedTestDomain, setSelectedTestDomain] = useState('Cloud concepts');
   const [selectedTestMode, setSelectedTestMode] = useState<TestModeId>('full-mock');
   const [activeTestSession, setActiveTestSession] = useState<TestSession | null>(null);
+  const [testAnalytics, setTestAnalytics] = useState<TestAnalytics>(EMPTY_TEST_ANALYTICS);
   const [testAttempts, setTestAttempts] = useState<readonly TestAttempt[]>([]);
   const [latestAttempt, setLatestAttempt] = useState<TestAttempt | null>(null);
   const [timerTick, setTimerTick] = useState(Date.now());
@@ -118,6 +121,7 @@ function AceCloudCertRoutes() {
     if (!isAuthenticated || !user) {
       setActiveTestSession(null);
       setLatestAttempt(null);
+      setTestAnalytics(EMPTY_TEST_ANALYTICS);
       setTestAttempts([]);
       return;
     }
@@ -126,9 +130,10 @@ function AceCloudCertRoutes() {
     const currentUserId = user.id;
 
     async function loadTestState() {
-      const [storedSession, storedAttempts] = await Promise.all([
+      const [storedSession, storedAttempts, storedAnalytics] = await Promise.all([
         testService.getActiveSession(currentUserId),
-        testService.listAttempts(currentUserId)
+        testService.listAttempts(currentUserId),
+        analyticsService.getTestAnalytics(currentUserId)
       ]);
 
       if (!active) {
@@ -136,6 +141,7 @@ function AceCloudCertRoutes() {
       }
 
       setActiveTestSession(storedSession);
+      setTestAnalytics(storedAnalytics);
       setTestAttempts(storedAttempts);
       setLatestAttempt(storedAttempts[0] ?? null);
 
@@ -294,9 +300,13 @@ function AceCloudCertRoutes() {
 
     const attempt = submitTestSession(session);
     const storedAttempt = await testService.saveAttempt(attempt);
-    const storedAttempts = await testService.listAttempts(session.userId);
+    const [storedAttempts, storedAnalytics] = await Promise.all([
+      testService.listAttempts(session.userId),
+      analyticsService.getTestAnalytics(session.userId)
+    ]);
 
     setLatestAttempt(storedAttempt);
+    setTestAnalytics(storedAnalytics);
     setTestAttempts(storedAttempts);
     setActiveTestSession(null);
 
@@ -381,7 +391,17 @@ function AceCloudCertRoutes() {
         <LegalPageContent legalPageId="terms" />
       ) : activeRoute === APP_ROUTES.dashboard ? (
         profile ? (
-          <DashboardPage availableFeatureCount={availableFeatures.length} domainCounts={domainCounts} navigate={navigate} profile={profile} />
+          <DashboardPage
+            analytics={testAnalytics}
+            availableFeatureCount={availableFeatures.length}
+            domainCounts={domainCounts}
+            navigate={navigate}
+            onAttemptSelect={(attempt) => {
+              setLatestAttempt(attempt);
+              navigate(APP_ROUTES.testResult);
+            }}
+            profile={profile}
+          />
         ) : (
           showProtectedFallback()
         )
@@ -406,6 +426,7 @@ function AceCloudCertRoutes() {
         <TestsPage
           activeSession={activeTestSession}
           activeTab={activeTestTab}
+          analytics={testAnalytics}
           attempts={testAttempts}
           domainCounts={domainCounts}
           navigate={navigate}
@@ -447,7 +468,12 @@ function AceCloudCertRoutes() {
           timerNow={timerTick}
         />
       ) : activeRoute === APP_ROUTES.testResult ? (
-        <TestResultPage attempt={latestAttempt} navigate={navigate} onRetry={() => openTestMode(latestAttempt?.mode ?? 'full-mock')} />
+        <TestResultPage
+          analytics={testAnalytics}
+          attempt={latestAttempt}
+          navigate={navigate}
+          onRetry={() => openTestMode(latestAttempt?.mode ?? 'full-mock')}
+        />
       ) : activeRoute === APP_ROUTES.testReview ? (
         <TestReviewPage attempt={latestAttempt} navigate={navigate} />
       ) : activeRoute === APP_ROUTES.knowledgeBase ? (
@@ -659,18 +685,24 @@ function LegalPageContent({ legalPageId }: { legalPageId: LegalPage['id'] }) {
 }
 
 function DashboardPage({
+  analytics,
   availableFeatureCount,
   domainCounts,
   navigate,
+  onAttemptSelect,
   profile
 }: NavigationProps & {
+  analytics: TestAnalytics;
   availableFeatureCount: number;
   domainCounts: Record<string, number>;
+  onAttemptSelect: (attempt: TestAttempt) => void;
   profile: UserAccountProfile;
 }) {
   const readiness = calculateReadinessScore(questionBank.length, 0);
   const activeCertificationTitle = getActiveCertificationTitle(profile);
   const stats = getProfileStats(profile);
+  const testsCompleted = analytics.testsCompleted || stats.testsCompleted;
+  const averageScore = analytics.testsCompleted > 0 ? analytics.averageScore : stats.averageScore;
 
   return (
     <>
@@ -690,10 +722,24 @@ function DashboardPage({
 
       <View style={styles.metricGrid}>
         <StatCard label="Active path" value={activeCertificationTitle} />
-        <StatCard label="Tests completed" value={stats.testsCompleted} />
-        <StatCard label="Average score" value={formatPercent(stats.averageScore)} />
-        <StatCard label="Readiness baseline" value={formatPercent(readiness)} />
+        <StatCard label="Tests completed" value={testsCompleted} />
+        <StatCard label="Average score" value={formatPercent(averageScore)} />
+        <StatCard label="Pass rate" value={formatPercent(analytics.passRate)} />
+        <StatCard label="Study streak" value={`${analytics.studyStreak}d`} />
       </View>
+
+      <Section eyebrow="Analytics" subtitle={analytics.recommendedNextAction} title="Performance snapshot">
+        <View style={styles.metricGrid}>
+          <StatCard label="Readiness baseline" value={formatPercent(readiness)} />
+          <StatCard label="Strongest domain" value={analytics.strongestDomain?.domain ?? 'Not enough data'} />
+          <StatCard label="Weakest domain" value={analytics.weakestDomain?.domain ?? 'Not enough data'} />
+        </View>
+        <View style={styles.cardGrid}>
+          <ScoreTrendCard trend={analytics.scoreTrend} />
+          <DomainPerformanceCards domainPerformance={analytics.domainPerformance} limit={4} />
+          <RecentAttemptsCard attempts={analytics.recentAttempts} onAttemptSelect={onAttemptSelect} />
+        </View>
+      </Section>
 
       <Section eyebrow="Quick actions" title="Route map">
         <View style={styles.metricGrid}>
@@ -761,6 +807,7 @@ function CertificationDetailPage({
 function TestsPage({
   activeSession,
   activeTab,
+  analytics,
   attempts,
   domainCounts,
   navigate,
@@ -773,6 +820,7 @@ function TestsPage({
 }: NavigationProps & {
   activeSession: TestSession | null;
   activeTab: string;
+  analytics: TestAnalytics;
   attempts: readonly TestAttempt[];
   domainCounts: Record<string, number>;
   onDomainChange: (value: string) => void;
@@ -807,6 +855,7 @@ function TestsPage({
         onChange={setActiveTab}
         tabs={[
           { id: 'overview', label: 'Modes' },
+          { id: 'analytics', label: 'Analytics' },
           { id: 'domains', label: 'Domains' },
           { id: 'history', label: 'History' }
         ]}
@@ -815,6 +864,8 @@ function TestsPage({
         <AppCard>
           <DomainProgressList domainCounts={domainCounts} />
         </AppCard>
+      ) : activeTab === 'analytics' ? (
+        <AnalyticsPanel analytics={analytics} onAttemptSelect={onAttemptSelect} />
       ) : activeTab === 'history' ? (
         attempts.length > 0 ? (
           <View style={styles.cardGrid}>
@@ -875,6 +926,119 @@ function TestsPage({
         </>
       )}
     </Section>
+  );
+}
+
+function AnalyticsPanel({ analytics, onAttemptSelect }: { analytics: TestAnalytics; onAttemptSelect: (attempt: TestAttempt) => void }) {
+  return (
+    <View style={styles.verticalStack}>
+      <View style={styles.metricGrid}>
+        <StatCard label="Average score" value={formatPercent(analytics.averageScore)} />
+        <StatCard label="Tests completed" value={analytics.testsCompleted} />
+        <StatCard label="Pass rate" value={formatPercent(analytics.passRate)} />
+        <StatCard label="Study streak" value={`${analytics.studyStreak}d`} />
+      </View>
+      <ToastNotification message={analytics.recommendedNextAction} title="Recommended next action" tone="info" />
+      <View style={styles.cardGrid}>
+        <ScoreTrendCard trend={analytics.scoreTrend} />
+        <DomainPerformanceCards domainPerformance={analytics.domainPerformance} />
+        <RecentAttemptsCard attempts={analytics.recentAttempts} onAttemptSelect={onAttemptSelect} />
+      </View>
+    </View>
+  );
+}
+
+function ScoreTrendCard({ trend }: { trend: readonly ScoreTrendPoint[] }) {
+  return (
+    <AppCard style={styles.flexCard}>
+      <Text style={styles.cardTitle}>Score trend</Text>
+      {trend.length > 0 ? (
+        <View style={styles.trendChart}>
+          {trend.map((point) => (
+            <View key={point.attemptId} style={styles.trendColumn}>
+              <View style={styles.trendTrack}>
+                <View style={[styles.trendBar, { height: Math.max(8, point.scorePercent) }]} />
+              </View>
+              <Text style={styles.trendLabel}>{point.label}</Text>
+              <Text style={styles.trendScore}>{formatPercent(point.scorePercent)}</Text>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <Text style={styles.copy}>Complete a quiz or mock exam to start building a score trend.</Text>
+      )}
+    </AppCard>
+  );
+}
+
+function DomainPerformanceCards({
+  domainPerformance,
+  limit
+}: {
+  domainPerformance: TestAnalytics['domainPerformance'];
+  limit?: number;
+}) {
+  const visibleDomains = typeof limit === 'number' ? domainPerformance.slice(0, limit) : domainPerformance;
+
+  if (visibleDomains.length === 0) {
+    return (
+      <AppCard style={styles.flexCard}>
+        <Text style={styles.cardTitle}>Domain performance</Text>
+        <Text style={styles.copy}>Domain analytics appear after the first completed attempt.</Text>
+      </AppCard>
+    );
+  }
+
+  return (
+    <AppCard style={styles.flexCard}>
+      <Text style={styles.cardTitle}>Domain performance</Text>
+      <View style={styles.domainList}>
+        {visibleDomains.map((domain) => (
+          <View key={domain.domain} style={styles.domainRow}>
+            <View style={styles.row}>
+              <Text style={styles.copyStrong}>{domain.domain}</Text>
+              <Text style={styles.copy}>{formatPercent(domain.scorePercent)}</Text>
+            </View>
+            <ProgressBar value={domain.scorePercent} />
+            <Text style={styles.microCopy}>
+              {domain.correct}/{domain.total} correct across {formatCount(domain.attempts, 'attempt')}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </AppCard>
+  );
+}
+
+function RecentAttemptsCard({
+  attempts,
+  onAttemptSelect
+}: {
+  attempts: readonly TestAttempt[];
+  onAttemptSelect: (attempt: TestAttempt) => void;
+}) {
+  return (
+    <AppCard style={styles.flexCard}>
+      <Text style={styles.cardTitle}>Recent attempts</Text>
+      {attempts.length > 0 ? (
+        <View style={styles.domainList}>
+          {attempts.slice(0, 4).map((attempt) => (
+            <Pressable key={attempt.id} onPress={() => onAttemptSelect(attempt)} style={styles.attemptRow}>
+              <View style={styles.row}>
+                <Badge tone={attempt.passed ? 'success' : 'danger'}>{attempt.passed ? 'Pass' : 'Review'}</Badge>
+                <Text style={styles.dateText}>{formatDateTime(attempt.completedAt)}</Text>
+              </View>
+              <Text style={styles.copyStrong}>{getAttemptTitle(attempt)}</Text>
+              <Text style={styles.copy}>
+                {formatPercent(attempt.scorePercent)} | {formatDuration(attempt.timeTakenSeconds)}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : (
+        <Text style={styles.copy}>Recent attempts will appear here after a test is submitted.</Text>
+      )}
+    </AppCard>
   );
 }
 
@@ -1073,7 +1237,16 @@ function TestSessionPage({
   );
 }
 
-function TestResultPage({ attempt, navigate, onRetry }: NavigationProps & { attempt: TestAttempt | null; onRetry: () => void }) {
+function TestResultPage({
+  analytics,
+  attempt,
+  navigate,
+  onRetry
+}: NavigationProps & {
+  analytics: TestAnalytics;
+  attempt: TestAttempt | null;
+  onRetry: () => void;
+}) {
   if (!attempt) {
     return (
       <Section eyebrow="Result" subtitle="Complete a mock exam or quiz to see scoring and analytics." title="Latest test result">
@@ -1082,20 +1255,48 @@ function TestResultPage({ attempt, navigate, onRetry }: NavigationProps & { atte
     );
   }
 
+  const insights = calculateResultInsights(attempt);
+
   return (
     <Section eyebrow="Result" subtitle="Scores are calculated from the submitted answer set and saved locally." title={getAttemptTitle(attempt)}>
       <View style={styles.metricGrid}>
+        <StatCard label="Status" value={attempt.passed ? 'Passed' : 'Failed'} />
         <StatCard label="Score" value={formatPercent(attempt.scorePercent)} />
+        <StatCard label="Pass mark" value={formatPercent(attempt.passMark)} />
         <StatCard label="Correct" value={attempt.correctCount} />
         <StatCard label="Incorrect" value={attempt.incorrectCount} />
         <StatCard label="Unanswered" value={attempt.unansweredCount} />
         <StatCard label="Time taken" value={formatDuration(attempt.timeTakenSeconds)} />
       </View>
       <ToastNotification
-        message={`Pass mark is ${formatPercent(attempt.passMark)}. ${attempt.passed ? 'Certificate generation can use this passed attempt.' : 'Review the domain breakdown and retry weak areas.'}`}
+        message={insights.recommendedNextAction}
         title={attempt.passed ? 'Passed' : 'Not passed yet'}
         tone={attempt.passed ? 'success' : 'error'}
       />
+      <View style={styles.cardGrid}>
+        <AppCard style={styles.flexCard}>
+          <Badge tone="success">Strongest domain</Badge>
+          <Text style={styles.cardTitle}>{insights.strongestDomain?.domain ?? 'Not enough data'}</Text>
+          <Text style={styles.copy}>
+            {insights.strongestDomain
+              ? `${formatPercent(insights.strongestDomain.scorePercent)} | ${insights.strongestDomain.correct}/${insights.strongestDomain.total} correct`
+              : 'Complete more attempts to identify a strength.'}
+          </Text>
+        </AppCard>
+        <AppCard style={styles.flexCard}>
+          <Badge tone="danger">Weakest domain</Badge>
+          <Text style={styles.cardTitle}>{insights.weakestDomain?.domain ?? 'Not enough data'}</Text>
+          <Text style={styles.copy}>
+            {insights.weakestDomain
+              ? `${formatPercent(insights.weakestDomain.scorePercent)} | ${insights.weakestDomain.correct}/${insights.weakestDomain.total} correct`
+              : 'Complete more attempts to identify a weak area.'}
+          </Text>
+        </AppCard>
+        <AppCard style={styles.flexCard}>
+          <Badge tone="info">Recommended next action</Badge>
+          <Text style={styles.copy}>{insights.recommendedNextAction}</Text>
+        </AppCard>
+      </View>
       <View style={styles.cardGrid}>
         {attempt.domainBreakdown.map((domain) => (
           <AppCard key={domain.domain} style={styles.flexCard}>
@@ -1110,6 +1311,17 @@ function TestResultPage({ attempt, navigate, onRetry }: NavigationProps & { atte
           </AppCard>
         ))}
       </View>
+      <Section eyebrow="Analytics" subtitle="This learner-level analytics summary updates after every submitted attempt." title="Attempt context">
+        <View style={styles.metricGrid}>
+          <StatCard label="Average score" value={formatPercent(analytics.averageScore)} />
+          <StatCard label="Tests completed" value={analytics.testsCompleted} />
+          <StatCard label="Pass rate" value={formatPercent(analytics.passRate)} />
+          <StatCard label="Study streak" value={`${analytics.studyStreak}d`} />
+        </View>
+        <View style={styles.cardGrid}>
+          <ScoreTrendCard trend={analytics.scoreTrend} />
+        </View>
+      </Section>
       <View style={styles.actions}>
         <PrimaryButton onPress={() => navigate(APP_ROUTES.testReview)}>Review answers</PrimaryButton>
         {attempt.passed ? <SecondaryButton onPress={() => navigate(APP_ROUTES.certificateDetail)}>Open certificate</SecondaryButton> : null}
@@ -1421,6 +1633,13 @@ const styles = StyleSheet.create({
     gap: theme.spacing.md,
     padding: theme.spacing.md
   },
+  attemptRow: {
+    borderColor: theme.colors.border,
+    borderRadius: theme.radii.md,
+    borderWidth: 1,
+    gap: theme.spacing.xs,
+    padding: theme.spacing.sm
+  },
   badgeRow: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -1450,6 +1669,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21
   },
+  copyStrong: {
+    color: theme.colors.text,
+    fontSize: 14,
+    fontWeight: '900',
+    lineHeight: 21
+  },
   dateText: {
     color: theme.colors.textMuted,
     fontSize: 12,
@@ -1458,6 +1683,12 @@ const styles = StyleSheet.create({
   },
   examCard: {
     gap: theme.spacing.md
+  },
+  domainList: {
+    gap: theme.spacing.md
+  },
+  domainRow: {
+    gap: theme.spacing.xs
   },
   flexCard: {
     flexBasis: 250,
@@ -1487,6 +1718,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: theme.spacing.md
+  },
+  microCopy: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 18
   },
   optionCard: {
     backgroundColor: theme.colors.surface
@@ -1586,6 +1823,46 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: theme.spacing.xs,
     minWidth: 240
+  },
+  trendBar: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.radii.sm,
+    width: '100%'
+  },
+  trendChart: {
+    alignItems: 'flex-end',
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    minHeight: 150
+  },
+  trendColumn: {
+    alignItems: 'center',
+    flex: 1,
+    gap: theme.spacing.xs,
+    minWidth: 34
+  },
+  trendLabel: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    fontWeight: '900'
+  },
+  trendScore: {
+    color: theme.colors.text,
+    fontSize: 11,
+    fontWeight: '900'
+  },
+  trendTrack: {
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radii.sm,
+    borderWidth: 1,
+    height: 105,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+    width: '100%'
+  },
+  verticalStack: {
+    gap: theme.spacing.md
   },
   tableMuted: {
     color: theme.colors.textMuted,

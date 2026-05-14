@@ -40,6 +40,10 @@ export type DomainBreakdown = {
   total: number;
 };
 
+export type DomainPerformance = DomainBreakdown & {
+  attempts: number;
+};
+
 export type TestAttempt = {
   answers: Record<string, TestAnswer>;
   certificationId: string;
@@ -58,6 +62,35 @@ export type TestAttempt = {
   timeTakenSeconds: number;
   unansweredCount: number;
   userId: string;
+};
+
+export type ScoreTrendPoint = {
+  attemptId: string;
+  completedAt: string;
+  label: string;
+  passed: boolean;
+  scorePercent: number;
+};
+
+export type ResultInsights = {
+  answeredCount: number;
+  recommendedNextAction: string;
+  strongestDomain?: DomainPerformance;
+  totalQuestions: number;
+  weakestDomain?: DomainPerformance;
+};
+
+export type TestAnalytics = {
+  averageScore: number;
+  domainPerformance: readonly DomainPerformance[];
+  passRate: number;
+  recentAttempts: readonly TestAttempt[];
+  recommendedNextAction: string;
+  scoreTrend: readonly ScoreTrendPoint[];
+  strongestDomain?: DomainPerformance;
+  studyStreak: number;
+  testsCompleted: number;
+  weakestDomain?: DomainPerformance;
 };
 
 export type TestQuestionView = {
