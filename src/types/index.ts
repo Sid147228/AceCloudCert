@@ -45,15 +45,26 @@ export type Certification = {
 
 export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
 
+export type Option = {
+  id: string;
+  text: string;
+};
+
 export type Question = {
   id: string;
   certificationId: string;
   domain: string;
-  prompt: string;
-  options: readonly string[];
-  correctAnswer: string;
-  explanation: string;
+  subDomain: string;
   difficulty: QuestionDifficulty;
+  questionText: string;
+  options: readonly Option[];
+  correctOptionId: string;
+  explanation: string;
+  reference: string;
+  tags: readonly string[];
+  isPremium: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type KnowledgeTopic = {

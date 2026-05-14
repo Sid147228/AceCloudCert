@@ -621,7 +621,7 @@ function TestReviewPage({ navigate }: NavigationProps) {
         {questionBank.slice(0, 4).map((question, index) => (
           <AppCard key={question.id} style={styles.flexCard}>
             <Badge tone={index % 2 === 0 ? 'success' : 'danger'}>{index % 2 === 0 ? 'Correct' : 'Review'}</Badge>
-            <Text style={styles.cardTitle}>{question.prompt}</Text>
+            <Text style={styles.cardTitle}>{question.questionText}</Text>
             <Text style={styles.copy}>{question.explanation}</Text>
           </AppCard>
         ))}
