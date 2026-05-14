@@ -1,14 +1,21 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AppCard } from '@/components/cards';
-import { PrimaryButton, SecondaryButton, ToastNotification } from '@/components/ui';
+import { AppButton, PrimaryButton, SecondaryButton, ToastNotification } from '@/components/ui';
 import { theme } from '@/constants/theme';
 import { useUserProfile } from '@/context';
 import type { AccountSettings, UserAccountProfile } from '../types';
 
+export type AccountLegalLink = {
+  description: string;
+  label: string;
+  onPress: () => void;
+  tone?: 'default' | 'danger';
+};
+
 type AccountSettingsPanelProps = {
+  legalLinks: readonly AccountLegalLink[];
   onChangePassword: () => void;
   onEditProfile: () => void;
-  onLegal: () => void;
   profile: UserAccountProfile;
 };
 
@@ -26,7 +33,7 @@ const settingDescriptions: Record<SettingKey, string> = {
   studyReminders: 'Receive study prompts for your active certification.'
 };
 
-export function AccountSettingsPanel({ onChangePassword, onEditProfile, onLegal, profile }: AccountSettingsPanelProps) {
+export function AccountSettingsPanel({ legalLinks, onChangePassword, onEditProfile, profile }: AccountSettingsPanelProps) {
   const { updateSettings } = useUserProfile();
 
   async function toggleSetting(key: SettingKey) {
@@ -41,7 +48,33 @@ export function AccountSettingsPanel({ onChangePassword, onEditProfile, onLegal,
         <View style={styles.actions}>
           <PrimaryButton onPress={onEditProfile}>Edit profile</PrimaryButton>
           <SecondaryButton onPress={onChangePassword}>Change password</SecondaryButton>
-          <SecondaryButton onPress={onLegal}>Privacy and terms</SecondaryButton>
+        </View>
+      </AppCard>
+
+      <AppCard style={styles.card}>
+        <Text style={styles.cardTitle}>Privacy and compliance</Text>
+        <Text style={styles.copy}>Review legal notices, data handling, cookie preferences, and account deletion requests.</Text>
+        <View style={styles.legalLinks}>
+          {legalLinks.map((link) => (
+            <View
+              key={link.label}
+              style={[styles.legalRow, link.tone === 'danger' && styles.legalRowDanger]}
+            >
+              <View style={styles.settingCopy}>
+                <Text style={[styles.settingTitle, link.tone === 'danger' && styles.dangerTitle]}>{link.label}</Text>
+                <Text style={styles.copy}>{link.description}</Text>
+              </View>
+              {link.tone === 'danger' ? (
+                <AppButton onPress={link.onPress} size="sm" variant="danger">
+                  Open
+                </AppButton>
+              ) : (
+                <SecondaryButton onPress={link.onPress} size="sm">
+                  Open
+                </SecondaryButton>
+              )}
+            </View>
+          ))}
         </View>
       </AppCard>
 
@@ -92,6 +125,27 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontSize: 14,
     lineHeight: 21
+  },
+  dangerTitle: {
+    color: theme.colors.danger
+  },
+  legalLinks: {
+    gap: theme.spacing.sm
+  },
+  legalRow: {
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radii.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.md,
+    justifyContent: 'space-between',
+    padding: theme.spacing.md
+  },
+  legalRowDanger: {
+    borderColor: 'rgba(239, 68, 68, 0.5)'
   },
   settingCopy: {
     flex: 1,

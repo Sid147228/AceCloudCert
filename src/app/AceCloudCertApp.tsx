@@ -8,7 +8,7 @@ import { AppCard, StatCard } from '@/components/cards';
 import { DomainProgressList } from '@/components/charts';
 import { InputField, SelectField } from '@/components/forms';
 import { AppShell, SectionHeader } from '@/components/layout';
-import { Badge, EmptyState, LoadingState, Modal, PrimaryButton, ProgressBar, SecondaryButton, Table, Tabs, ToastNotification } from '@/components/ui';
+import { AppButton, Badge, EmptyState, LoadingState, Modal, PrimaryButton, ProgressBar, SecondaryButton, Table, Tabs, ToastNotification } from '@/components/ui';
 import type { TableColumn } from '@/components/ui';
 import { APP_NAME, DEFAULT_CERTIFICATION_ID, PASS_MARK_PERCENT } from '@/constants/app';
 import { APP_ROUTES } from '@/constants/routes';
@@ -67,7 +67,7 @@ import {
 } from '@/features/subscriptions';
 import { ROUTE_LABELS, ROUTE_META, getBreadcrumbs, getNavigationRoute, isProtectedRoute } from '@/app/navigation';
 import { useAppNavigation } from '@/hooks';
-import { analyticsService, certificateService, serviceReadiness, testService } from '@/services';
+import { analyticsService, certificateService, serviceReadiness, storageService, testService } from '@/services';
 import type {
   AppRoute,
   CertificateRecord,
@@ -81,6 +81,16 @@ import type {
 import { countQuestionsByDomain, formatCount, formatPercent } from '@/utils';
 
 const authEntryRoutes = new Set<AppRoute>([APP_ROUTES.login, APP_ROUTES.signup, APP_ROUTES.forgotPassword]);
+const cookieConsentStorageKey = 'acecloudcert.cookieConsent.v1';
+const legalFooterRoutes = [
+  APP_ROUTES.privacyPolicy,
+  APP_ROUTES.terms,
+  APP_ROUTES.cookiePolicy,
+  APP_ROUTES.dataHandling,
+  APP_ROUTES.deleteAccountRequest
+] as const;
+
+type CookieConsentPreference = 'accepted' | 'declined';
 
 const serviceColumns: readonly TableColumn<ServiceReadinessItem>[] = [
   {
@@ -142,6 +152,9 @@ function AceCloudCertRoutes() {
   const [certificateNotice, setCertificateNotice] = useState<string | null>(null);
   const [latestAttempt, setLatestAttempt] = useState<TestAttempt | null>(null);
   const [timerTick, setTimerTick] = useState(Date.now());
+  const [cookieConsentPreference, setCookieConsentPreference] = useState<CookieConsentPreference | null>(null);
+  const [cookieConsentLoaded, setCookieConsentLoaded] = useState(false);
+  const [cookieNotice, setCookieNotice] = useState<string | null>(null);
 
   const domainCounts = useMemo(() => countQuestionsByDomain(questionBank), []);
   const selectedCertification =
@@ -153,6 +166,30 @@ function AceCloudCertRoutes() {
   const selectedTestModeConfig = getTestModeConfig(selectedTestMode);
   const activeMenuRoute =
     isAuthenticated && !isProtectedRoute(activeRoute) ? getAuthenticatedPublicMenuRoute(activeRoute) : getNavigationRoute(activeRoute);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadCookieConsent() {
+      const storedPreference = await storageService.getItem(cookieConsentStorageKey);
+
+      if (!active) {
+        return;
+      }
+
+      if (storedPreference === 'accepted' || storedPreference === 'declined') {
+        setCookieConsentPreference(storedPreference);
+      }
+
+      setCookieConsentLoaded(true);
+    }
+
+    void loadCookieConsent();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated || !user) {
@@ -248,6 +285,16 @@ function AceCloudCertRoutes() {
       setRedirectAfterLogin(APP_ROUTES.dashboard);
       setActiveRoute(APP_ROUTES.landing);
     });
+  }
+
+  async function updateCookieConsent(preference: CookieConsentPreference) {
+    setCookieConsentPreference(preference);
+    setCookieNotice(
+      preference === 'accepted'
+        ? 'Essential storage preference saved. Optional analytics cookies remain disabled in this build.'
+        : 'Optional cookies declined. Essential storage still keeps login, progress, and consent working.'
+    );
+    await storageService.setItem(cookieConsentStorageKey, preference);
   }
 
   function openCertificationDetail(certification: Certification) {
@@ -586,6 +633,13 @@ function AceCloudCertRoutes() {
       routeLabels={ROUTE_LABELS}
     >
       {activeRoute !== APP_ROUTES.landing ? <RouteHeading navigate={navigate} route={activeRoute} /> : null}
+      {cookieConsentLoaded && !cookieConsentPreference ? (
+        <CookieConsentBanner
+          navigate={navigate}
+          onAccept={() => void updateCookieConsent('accepted')}
+          onDecline={() => void updateCookieConsent('declined')}
+        />
+      ) : null}
       {activeRoute === APP_ROUTES.landing ? (
         <LandingPage isAuthenticated={isAuthenticated} navigate={navigate} />
       ) : activeRoute === APP_ROUTES.login ? (
@@ -617,9 +671,18 @@ function AceCloudCertRoutes() {
           onSelectPlan={selectPricingPlan}
         />
       ) : activeRoute === APP_ROUTES.privacyPolicy ? (
-        <LegalPageContent legalPageId="privacy" />
+        <LegalPageContent legalPageId="privacy" navigate={navigate} />
       ) : activeRoute === APP_ROUTES.terms ? (
-        <LegalPageContent legalPageId="terms" />
+        <LegalPageContent legalPageId="terms" navigate={navigate} />
+      ) : activeRoute === APP_ROUTES.cookiePolicy ? (
+        <LegalPageContent
+          cookieNotice={cookieNotice}
+          legalPageId="cookies"
+          navigate={navigate}
+          onCookiePreferenceChange={(preference) => void updateCookieConsent(preference)}
+        />
+      ) : activeRoute === APP_ROUTES.dataHandling ? (
+        <LegalPageContent legalPageId="data-handling" navigate={navigate} />
       ) : activeRoute === APP_ROUTES.dashboard ? (
         profile ? (
           <DashboardPage
@@ -780,6 +843,8 @@ function AceCloudCertRoutes() {
         ) : (
           showProtectedFallback()
         )
+      ) : activeRoute === APP_ROUTES.deleteAccountRequest ? (
+        profile ? <DeleteAccountRequestPage navigate={navigate} profile={profile} /> : showProtectedFallback()
       ) : activeRoute === APP_ROUTES.subscription ? (
         profile ? (
           <SubscriptionPage
@@ -834,7 +899,12 @@ function getAuthenticatedPublicMenuRoute(route: AppRoute) {
     return APP_ROUTES.subscription;
   }
 
-  if (route === APP_ROUTES.privacyPolicy || route === APP_ROUTES.terms) {
+  if (
+    route === APP_ROUTES.privacyPolicy ||
+    route === APP_ROUTES.terms ||
+    route === APP_ROUTES.cookiePolicy ||
+    route === APP_ROUTES.dataHandling
+  ) {
     return APP_ROUTES.settings;
   }
 
@@ -923,6 +993,7 @@ function LandingPage({ isAuthenticated, navigate }: NavigationProps & { isAuthen
           title="Certificates"
         />
       </View>
+      <LegalLinksFooter navigate={navigate} />
     </>
   );
 }
@@ -930,6 +1001,7 @@ function LandingPage({ isAuthenticated, navigate }: NavigationProps & { isAuthen
 function PricingPage({
   currentPlan,
   isAuthenticated,
+  navigate,
   onSelectPlan
 }: NavigationProps & {
   currentPlan?: UserPlan;
@@ -954,6 +1026,7 @@ function PricingPage({
         ))}
       </View>
       <PlanComparisonTable />
+      <LegalLinksFooter navigate={navigate} />
     </Section>
   );
 }
@@ -1048,26 +1121,149 @@ function PlanComparisonTable() {
   );
 }
 
-function LegalPageContent({ legalPageId }: { legalPageId: LegalPage['id'] }) {
+function LegalPageContent({
+  cookieNotice,
+  legalPageId,
+  navigate,
+  onCookiePreferenceChange
+}: NavigationProps & {
+  cookieNotice?: string | null;
+  legalPageId: LegalPage['id'];
+  onCookiePreferenceChange?: (preference: CookieConsentPreference) => void;
+}) {
   const legalPage = legalPages.find((page) => page.id === legalPageId);
+
+  if (!legalPage) {
+    return (
+      <EmptyState
+        actionLabel="Back home"
+        description="This legal route is not available."
+        onAction={() => navigate(APP_ROUTES.landing)}
+        title="Legal page unavailable"
+      />
+    );
+  }
 
   return (
     <Section
       eyebrow="Compliance"
-      subtitle={legalPage?.summary ?? 'Compliance route for learner trust and platform governance.'}
-      title={legalPage?.title ?? 'Legal Notice'}
+      subtitle={legalPage.summary}
+      title={legalPage.title}
     >
-      <AppCard>
+      <AppCard style={styles.legalSummaryCard}>
+        <View style={styles.row}>
+          <Badge tone="info">Last updated {legalPage.lastUpdated}</Badge>
+          <Badge tone="primary">UK/EU GDPR friendly</Badge>
+        </View>
         <Text style={styles.copy}>
-          AceCloudCert separates public legal pages from authenticated product routes so privacy, terms, cookie consent,
-          and data handling notices can be linked from signup, settings, and the footer without route duplication.
-        </Text>
-        <Text style={styles.copy}>
-          This page is ready for final legal copy, version history, consent capture, and future export or deletion request
-          workflows.
+          This notice is written for the current AceCloudCert local-first build and the planned Firebase, Stripe, and
+          certificate workflows. Production launch should include a final review against the registered legal entity,
+          processor contracts, and payment configuration.
         </Text>
       </AppCard>
+      <LegalSections sections={legalPage.sections} />
+      {legalPageId === 'cookies' && onCookiePreferenceChange ? (
+        <CookiePreferencePanel
+          notice={cookieNotice}
+          onAccept={() => onCookiePreferenceChange('accepted')}
+          onDecline={() => onCookiePreferenceChange('declined')}
+        />
+      ) : null}
+      <LegalLinksFooter navigate={navigate} />
     </Section>
+  );
+}
+
+function LegalSections({ sections }: { sections: LegalPage['sections'] }) {
+  return (
+    <View style={styles.verticalStack}>
+      {sections.map((section) => (
+        <AppCard key={section.title} style={styles.legalSectionCard}>
+          <Text style={styles.cardTitle}>{section.title}</Text>
+          {section.body.map((paragraph) => (
+            <Text key={paragraph} style={styles.copy}>
+              {paragraph}
+            </Text>
+          ))}
+          {section.bullets ? (
+            <View style={styles.bulletList}>
+              {section.bullets.map((bullet) => (
+                <Text key={bullet} style={styles.copyStrong}>
+                  - {bullet}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+        </AppCard>
+      ))}
+    </View>
+  );
+}
+
+function CookiePreferencePanel({
+  notice,
+  onAccept,
+  onDecline
+}: {
+  notice?: string | null;
+  onAccept: () => void;
+  onDecline: () => void;
+}) {
+  return (
+    <AppCard style={styles.cookiePreferenceCard}>
+      <Text style={styles.cardTitle}>Manage cookie preferences</Text>
+      <Text style={styles.copy}>
+        Essential browser storage keeps login, consent, test resume, progress, certificates, and account settings working.
+        Optional analytics cookies are disabled in this build.
+      </Text>
+      <View style={styles.actions}>
+        <PrimaryButton onPress={onAccept}>Accept essential storage</PrimaryButton>
+        <SecondaryButton onPress={onDecline}>Decline optional cookies</SecondaryButton>
+      </View>
+      {notice ? <ToastNotification message={notice} title="Preference saved" tone="success" /> : null}
+    </AppCard>
+  );
+}
+
+function CookieConsentBanner({
+  navigate,
+  onAccept,
+  onDecline
+}: NavigationProps & {
+  onAccept: () => void;
+  onDecline: () => void;
+}) {
+  return (
+    <AppCard style={styles.cookieBanner}>
+      <View style={styles.cookieBannerCopy}>
+        <Badge tone="info">Privacy preference</Badge>
+        <Text style={styles.cardTitle}>Cookie and local storage notice</Text>
+        <Text style={styles.copy}>
+          AceCloudCert uses essential local storage for account sessions, consent, test progress, certificates, and
+          learning history. Optional analytics cookies are not enabled in this build.
+        </Text>
+      </View>
+      <View style={styles.actions}>
+        <PrimaryButton onPress={onAccept}>Accept essential storage</PrimaryButton>
+        <SecondaryButton onPress={onDecline}>Decline optional cookies</SecondaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.cookiePolicy)}>Cookie policy</SecondaryButton>
+      </View>
+    </AppCard>
+  );
+}
+
+function LegalLinksFooter({ navigate }: NavigationProps) {
+  return (
+    <View style={styles.legalFooter}>
+      <Text style={styles.microCopy}>Legal and privacy</Text>
+      <View style={styles.legalFooterLinks}>
+        {legalFooterRoutes.map((route) => (
+          <SecondaryButton key={route} onPress={() => navigate(route)} size="sm">
+            {ROUTE_LABELS[route]}
+          </SecondaryButton>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -2351,14 +2547,123 @@ function EditProfilePage({ navigate, profile }: NavigationProps & { profile: Use
 }
 
 function SettingsPage({ navigate, profile }: NavigationProps & { profile: UserAccountProfile }) {
+  const legalLinks = [
+    {
+      description: 'How AceCloudCert handles profile, progress, attempt, certificate, and subscription data.',
+      label: 'Privacy Policy',
+      onPress: () => navigate(APP_ROUTES.privacyPolicy)
+    },
+    {
+      description: 'Account terms, acceptable use, subscription notes, and practice certificate limitations.',
+      label: 'Terms and Conditions',
+      onPress: () => navigate(APP_ROUTES.terms)
+    },
+    {
+      description: 'Essential local storage, optional cookies, and consent preference controls.',
+      label: 'Cookie Policy',
+      onPress: () => navigate(APP_ROUTES.cookiePolicy)
+    },
+    {
+      description: 'Local-first storage, future Firebase/Stripe handling, export, correction, and erasure workflows.',
+      label: 'Data Handling Notice',
+      onPress: () => navigate(APP_ROUTES.dataHandling)
+    },
+    {
+      description: 'Start a structured future erasure request for your learner account.',
+      label: 'Delete Account Request',
+      onPress: () => navigate(APP_ROUTES.deleteAccountRequest),
+      tone: 'danger' as const
+    }
+  ];
+
   return (
     <Section eyebrow="Preferences" subtitle="Account settings, privacy links, and security controls." title="Account settings">
       <AccountSettingsPanel
+        legalLinks={legalLinks}
         onChangePassword={() => navigate(APP_ROUTES.changePassword)}
         onEditProfile={() => navigate(APP_ROUTES.editProfile)}
-        onLegal={() => navigate(APP_ROUTES.privacyPolicy)}
         profile={profile}
       />
+    </Section>
+  );
+}
+
+function DeleteAccountRequestPage({ navigate, profile }: NavigationProps & { profile: UserAccountProfile }) {
+  const [confirmationEmail, setConfirmationEmail] = useState('');
+  const [requestNotes, setRequestNotes] = useState('');
+  const [requestSubmitted, setRequestSubmitted] = useState(false);
+  const [requestReference] = useState(() => `ACC-ERASURE-${Date.now().toString(36).toUpperCase()}`);
+  const deletePage = legalPages.find((page) => page.id === 'delete-account');
+  const emailMatches = confirmationEmail.trim().toLowerCase() === profile.email.toLowerCase();
+
+  function submitRequest() {
+    if (!emailMatches) {
+      return;
+    }
+
+    setRequestSubmitted(true);
+  }
+
+  return (
+    <Section
+      eyebrow="Data rights"
+      subtitle={deletePage?.summary ?? 'Request deletion of eligible account data.'}
+      title="Delete account request"
+    >
+      {deletePage ? <LegalSections sections={deletePage.sections} /> : null}
+
+      <AppCard style={styles.dangerZone}>
+        <View style={styles.row}>
+          <View style={styles.stack}>
+            <Text style={styles.cardTitle}>Request account deletion</Text>
+            <Text style={styles.copy}>
+              Confirm the account email before submitting. This creates a local request preview now and is ready to map
+              to a secure Firebase/Firestore erasure ticket later.
+            </Text>
+          </View>
+          <Badge tone={requestSubmitted ? 'success' : 'danger'}>{requestSubmitted ? 'Requested' : 'Sensitive action'}</Badge>
+        </View>
+
+        <View style={styles.metricGrid}>
+          <StatCard label="Account" value={profile.email} />
+          <StatCard label="Candidate" value={profile.fullName} />
+          <StatCard label="Reference" value={requestReference} />
+        </View>
+
+        <InputField
+          disabled={requestSubmitted}
+          error={confirmationEmail && !emailMatches ? 'Enter the email address on this account.' : undefined}
+          label="Confirm account email"
+          onChangeText={setConfirmationEmail}
+          value={confirmationEmail}
+        />
+        <InputField
+          disabled={requestSubmitted}
+          label="Notes for the request"
+          onChangeText={setRequestNotes}
+          value={requestNotes}
+        />
+
+        {requestSubmitted ? (
+          <ToastNotification
+            message={`Request ${requestReference} has been recorded in this local session. A production workflow should verify identity, create a support record, and confirm deletion outcomes by email.`}
+            title="Delete account request received"
+            tone="success"
+          />
+        ) : null}
+
+        <View style={styles.actions}>
+          <AppButton disabled={!emailMatches || requestSubmitted} onPress={submitRequest} variant="danger">
+            Submit delete request
+          </AppButton>
+          <SecondaryButton onPress={() => navigate(APP_ROUTES.dataHandling)}>Review data handling</SecondaryButton>
+          <SecondaryButton onPress={() => navigate(APP_ROUTES.settings)}>Back to settings</SecondaryButton>
+        </View>
+
+        {requestNotes.trim() ? (
+          <Text style={styles.microCopy}>Request notes will be attached to the future compliance ticket.</Text>
+        ) : null}
+      </AppCard>
     </Section>
   );
 }
@@ -2596,6 +2901,9 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: theme.spacing.xs
   },
+  bulletList: {
+    gap: theme.spacing.xs
+  },
   certificateBrand: {
     color: '#0F172A',
     fontSize: 20,
@@ -2728,8 +3036,29 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     lineHeight: 21
   },
+  cookieBanner: {
+    alignItems: 'center',
+    borderColor: theme.colors.accentBlue,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.md,
+    justifyContent: 'space-between'
+  },
+  cookieBannerCopy: {
+    flex: 1,
+    gap: theme.spacing.xs,
+    minWidth: 250
+  },
+  cookiePreferenceCard: {
+    borderColor: theme.colors.accentBlue,
+    gap: theme.spacing.md
+  },
   currentPlanCard: {
     borderColor: theme.colors.primary
+  },
+  dangerZone: {
+    borderColor: 'rgba(239, 68, 68, 0.55)',
+    gap: theme.spacing.md
   },
   dashboardActionCard: {
     flexBasis: 220,
@@ -2816,6 +3145,24 @@ const styles = StyleSheet.create({
   landingHero: {
     gap: theme.spacing.lg,
     paddingVertical: theme.spacing.xxl
+  },
+  legalFooter: {
+    borderColor: theme.colors.border,
+    borderTopWidth: 1,
+    gap: theme.spacing.sm,
+    paddingTop: theme.spacing.md
+  },
+  legalFooterLinks: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.xs
+  },
+  legalSectionCard: {
+    gap: theme.spacing.md
+  },
+  legalSummaryCard: {
+    borderColor: theme.colors.accentBlue,
+    gap: theme.spacing.md
   },
   metricGrid: {
     flexDirection: 'row',

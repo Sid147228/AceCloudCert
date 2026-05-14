@@ -68,6 +68,18 @@ export const ROUTE_META: Record<AppRoute, RouteMeta> = {
     title: 'Terms and Conditions',
     subtitle: 'The terms for using AceCloudCert.'
   },
+  [APP_ROUTES.cookiePolicy]: {
+    access: 'public',
+    parent: APP_ROUTES.landing,
+    title: 'Cookie Policy',
+    subtitle: 'How AceCloudCert uses essential local storage and consent preferences.'
+  },
+  [APP_ROUTES.dataHandling]: {
+    access: 'public',
+    parent: APP_ROUTES.landing,
+    title: 'Data Handling Notice',
+    subtitle: 'How learner data is stored now and how backend workflows will handle it later.'
+  },
   [APP_ROUTES.dashboard]: {
     access: 'protected',
     title: 'Dashboard',
@@ -175,6 +187,12 @@ export const ROUTE_META: Record<AppRoute, RouteMeta> = {
     title: 'Certificate History',
     subtitle: 'Review earned AceCloudCert certificates.'
   },
+  [APP_ROUTES.deleteAccountRequest]: {
+    access: 'protected',
+    parent: APP_ROUTES.settings,
+    title: 'Delete Account Request',
+    subtitle: 'Start a future erasure workflow for your AceCloudCert account.'
+  },
   [APP_ROUTES.subscription]: {
     access: 'protected',
     parent: APP_ROUTES.profile,
@@ -198,6 +216,8 @@ export const ROUTE_LABELS: Record<AppRoute, string> = {
   [APP_ROUTES.pricing]: 'Pricing',
   [APP_ROUTES.privacyPolicy]: 'Privacy',
   [APP_ROUTES.terms]: 'Terms',
+  [APP_ROUTES.cookiePolicy]: 'Cookies',
+  [APP_ROUTES.dataHandling]: 'Data Handling',
   [APP_ROUTES.dashboard]: 'Dashboard',
   [APP_ROUTES.certifications]: 'Certifications',
   [APP_ROUTES.certificationDetail]: 'Certification Detail',
@@ -216,6 +236,7 @@ export const ROUTE_LABELS: Record<AppRoute, string> = {
   [APP_ROUTES.changePassword]: 'Change Password',
   [APP_ROUTES.learningHistory]: 'Learning History',
   [APP_ROUTES.certificateHistory]: 'Certificate History',
+  [APP_ROUTES.deleteAccountRequest]: 'Delete Account',
   [APP_ROUTES.subscription]: 'Subscription',
   [APP_ROUTES.adminDashboard]: 'Admin'
 };

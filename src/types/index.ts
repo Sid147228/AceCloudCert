@@ -104,10 +104,18 @@ export type CertificateRecord = {
   sourceAttemptId?: string;
 };
 
+export type LegalPageSection = {
+  title: string;
+  body: readonly string[];
+  bullets?: readonly string[];
+};
+
 export type LegalPage = {
-  id: 'privacy' | 'terms' | 'cookies' | 'data-handling';
+  id: 'privacy' | 'terms' | 'cookies' | 'data-handling' | 'delete-account';
   title: string;
   summary: string;
+  lastUpdated: string;
+  sections: readonly LegalPageSection[];
 };
 
 export type AttemptSummary = {

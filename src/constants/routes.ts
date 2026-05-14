@@ -7,6 +7,8 @@ export const APP_ROUTES = {
   pricing: 'pricing',
   privacyPolicy: 'privacy-policy',
   terms: 'terms-and-conditions',
+  cookiePolicy: 'cookie-policy',
+  dataHandling: 'data-handling-notice',
   dashboard: 'dashboard',
   certifications: 'certifications',
   certificationDetail: 'certification-detail',
@@ -25,6 +27,7 @@ export const APP_ROUTES = {
   changePassword: 'change-password',
   learningHistory: 'learning-history',
   certificateHistory: 'certificate-history',
+  deleteAccountRequest: 'delete-account-request',
   subscription: 'subscription',
   adminDashboard: 'admin-dashboard'
 } as const;
@@ -37,7 +40,9 @@ export const PUBLIC_ROUTES = [
   APP_ROUTES.emailVerification,
   APP_ROUTES.pricing,
   APP_ROUTES.privacyPolicy,
-  APP_ROUTES.terms
+  APP_ROUTES.terms,
+  APP_ROUTES.cookiePolicy,
+  APP_ROUTES.dataHandling
 ] as const;
 
 export const PROTECTED_ROUTES = [
@@ -59,6 +64,7 @@ export const PROTECTED_ROUTES = [
   APP_ROUTES.changePassword,
   APP_ROUTES.learningHistory,
   APP_ROUTES.certificateHistory,
+  APP_ROUTES.deleteAccountRequest,
   APP_ROUTES.subscription,
   APP_ROUTES.adminDashboard
 ] as const;
@@ -90,5 +96,7 @@ export const PUBLIC_NAVIGATION = [
   APP_ROUTES.landing,
   APP_ROUTES.pricing,
   APP_ROUTES.privacyPolicy,
-  APP_ROUTES.terms
+  APP_ROUTES.terms,
+  APP_ROUTES.cookiePolicy,
+  APP_ROUTES.dataHandling
 ] as const;
