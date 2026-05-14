@@ -9,10 +9,21 @@ import type { TableColumn } from '@/components/ui';
 import { APP_NAME, DEFAULT_CERTIFICATION_ID, PASS_MARK_PERCENT } from '@/constants/app';
 import { APP_ROUTES } from '@/constants/routes';
 import { theme } from '@/constants/theme';
-import { AuthProvider, useAuth } from '@/context';
+import { AuthProvider, UserProfileProvider, useAuth, useUserProfile } from '@/context';
 import { certifications, knowledgeTopics, legalPages, questionBank, subscriptionPlans } from '@/data';
 import { EmailVerificationNotice, ForgotPasswordForm, LoginForm, SignupForm } from '@/features/auth/components';
 import type { AuthUser } from '@/features/auth';
+import {
+  AccountSettingsPanel,
+  CertificateHistoryPanel,
+  ChangePasswordForm,
+  EditProfileForm,
+  LearningHistoryPanel,
+  ProfileSummary,
+  SubscriptionStatusPanel
+} from '@/features/profile/components';
+import { getActiveCertificationTitle, getProfileStats } from '@/features/profile';
+import type { UserAccountProfile } from '@/features/profile';
 import { ROUTE_LABELS, ROUTE_META, getBreadcrumbs, getNavigationRoute, isProtectedRoute } from '@/app/navigation';
 import { featureModules } from '@/features';
 import { useAppNavigation } from '@/hooks';
@@ -47,7 +58,9 @@ const serviceColumns: readonly TableColumn<ServiceReadinessItem>[] = [
 export default function AceCloudCertApp() {
   return (
     <AuthProvider>
-      <AceCloudCertRoutes />
+      <UserProfileProvider>
+        <AceCloudCertRoutes />
+      </UserProfileProvider>
     </AuthProvider>
   );
 }
@@ -55,12 +68,13 @@ export default function AceCloudCertApp() {
 function AceCloudCertRoutes() {
   const { activeRoute, navigate: setActiveRoute } = useAppNavigation(APP_ROUTES.landing);
   const { isAuthenticated, isInitializing, logout, status, user } = useAuth();
+  const { isProfileLoading, profile } = useUserProfile();
   const [redirectAfterLogin, setRedirectAfterLogin] = useState<AppRoute>(APP_ROUTES.dashboard);
   const [activeTestTab, setActiveTestTab] = useState('overview');
 
   const domainCounts = useMemo(() => countQuestionsByDomain(questionBank), []);
   const availableFeatures = useMemo(() => getAvailableFeatures(featureModules), []);
-  const userProfile = user ? toUserProfile(user) : null;
+  const userProfile = profile ? toUserProfile(profile) : null;
   const activeMenuRoute =
     isAuthenticated && !isProtectedRoute(activeRoute) ? getAuthenticatedPublicMenuRoute(activeRoute) : getNavigationRoute(activeRoute);
 
@@ -95,7 +109,7 @@ function AceCloudCertRoutes() {
   }
 
   function showProtectedFallback() {
-    return <LoadingState message="Preparing your secure workspace..." />;
+    return <LoadingState message={isProfileLoading ? 'Loading your account profile...' : 'Preparing your secure workspace...'} />;
   }
 
   if (isInitializing) {
@@ -158,8 +172,8 @@ function AceCloudCertRoutes() {
       ) : activeRoute === APP_ROUTES.terms ? (
         <LegalPageContent legalPageId="terms" />
       ) : activeRoute === APP_ROUTES.dashboard ? (
-        userProfile ? (
-          <DashboardPage availableFeatureCount={availableFeatures.length} domainCounts={domainCounts} navigate={navigate} user={userProfile} />
+        profile ? (
+          <DashboardPage availableFeatureCount={availableFeatures.length} domainCounts={domainCounts} navigate={navigate} profile={profile} />
         ) : (
           showProtectedFallback()
         )
@@ -182,15 +196,23 @@ function AceCloudCertRoutes() {
       ) : activeRoute === APP_ROUTES.knowledgeTopicDetail ? (
         <KnowledgeTopicDetailPage navigate={navigate} />
       ) : activeRoute === APP_ROUTES.certificates ? (
-        <CertificatesPage navigate={navigate} />
+        profile ? <CertificatesPage navigate={navigate} profile={profile} /> : showProtectedFallback()
       ) : activeRoute === APP_ROUTES.certificateDetail ? (
         userProfile ? <CertificateDetailPage navigate={navigate} user={userProfile} /> : showProtectedFallback()
       ) : activeRoute === APP_ROUTES.profile ? (
-        userProfile ? <ProfilePage navigate={navigate} onLogout={handleLogout} user={userProfile} /> : showProtectedFallback()
+        profile ? <ProfilePage navigate={navigate} onLogout={handleLogout} profile={profile} /> : showProtectedFallback()
+      ) : activeRoute === APP_ROUTES.editProfile ? (
+        profile ? <EditProfilePage navigate={navigate} profile={profile} /> : showProtectedFallback()
       ) : activeRoute === APP_ROUTES.settings ? (
-        <SettingsPage navigate={navigate} />
+        profile ? <SettingsPage navigate={navigate} profile={profile} /> : showProtectedFallback()
+      ) : activeRoute === APP_ROUTES.changePassword ? (
+        <ChangePasswordPage navigate={navigate} />
+      ) : activeRoute === APP_ROUTES.learningHistory ? (
+        profile ? <LearningHistoryPage navigate={navigate} profile={profile} /> : showProtectedFallback()
+      ) : activeRoute === APP_ROUTES.certificateHistory ? (
+        profile ? <CertificateHistoryPage navigate={navigate} profile={profile} /> : showProtectedFallback()
       ) : activeRoute === APP_ROUTES.subscription ? (
-        <SubscriptionPage navigate={navigate} />
+        profile ? <SubscriptionPage navigate={navigate} profile={profile} /> : showProtectedFallback()
       ) : (
         <AdminDashboardPage navigate={navigate} />
       )}
@@ -239,12 +261,12 @@ function getAuthenticatedPublicMenuRoute(route: AppRoute) {
   return APP_ROUTES.dashboard;
 }
 
-function toUserProfile(authUser: AuthUser): UserProfile {
+function toUserProfile(profile: UserAccountProfile): UserProfile {
   return {
-    email: authUser.email,
-    id: authUser.id,
-    name: authUser.fullName,
-    plan: authUser.plan
+    email: profile.email,
+    id: profile.userId,
+    name: profile.fullName,
+    plan: profile.plan
   };
 }
 
@@ -356,16 +378,15 @@ function DashboardPage({
   availableFeatureCount,
   domainCounts,
   navigate,
-  user
+  profile
 }: NavigationProps & {
   availableFeatureCount: number;
   domainCounts: Record<string, number>;
-  user: UserProfile;
+  profile: UserAccountProfile;
 }) {
   const readiness = calculateReadinessScore(questionBank.length, 0);
-  const activeCertificationTitle =
-    certifications.find((certification) => certification.id === DEFAULT_CERTIFICATION_ID)?.title ??
-    'AWS Certified Cloud Practitioner';
+  const activeCertificationTitle = getActiveCertificationTitle(profile);
+  const stats = getProfileStats(profile);
 
   return (
     <>
@@ -373,7 +394,7 @@ function DashboardPage({
         <SectionHeader
           eyebrow="Protected route"
           subtitle="This dashboard is the authenticated app entry point with working navigation into every major product area."
-          title={`Welcome, ${user.name}`}
+          title={`Welcome, ${profile.fullName}`}
         />
         <ToastNotification message="Navigation and layout architecture are wired. Feature logic comes next." title="Workspace ready" tone="success" />
         <View style={styles.actions}>
@@ -385,12 +406,16 @@ function DashboardPage({
 
       <View style={styles.metricGrid}>
         <StatCard label="Active path" value={activeCertificationTitle} />
+        <StatCard label="Tests completed" value={stats.testsCompleted} />
+        <StatCard label="Average score" value={formatPercent(stats.averageScore)} />
         <StatCard label="Readiness baseline" value={formatPercent(readiness)} />
-        <StatCard label="Feature modules" value={availableFeatureCount} />
-        <StatCard label="Domains mapped" value={Object.keys(domainCounts).length} />
       </View>
 
       <Section eyebrow="Quick actions" title="Route map">
+        <View style={styles.metricGrid}>
+          <StatCard label="Feature modules" value={availableFeatureCount} />
+          <StatCard label="Domains mapped" value={Object.keys(domainCounts).length} />
+        </View>
         <View style={styles.cardGrid}>
           {featureModules.map((feature) => (
             <FeatureCard key={feature.id} feature={feature} onPress={() => navigate(feature.route)} />
@@ -602,7 +627,19 @@ function KnowledgeTopicDetailPage({ navigate }: NavigationProps) {
   );
 }
 
-function CertificatesPage({ navigate }: NavigationProps) {
+function CertificatesPage({ navigate, profile }: NavigationProps & { profile: UserAccountProfile }) {
+  if (profile.certificateHistory.length > 0) {
+    return (
+      <Section eyebrow="Achievements" subtitle="Certificate records connected to your account profile." title="Certificates">
+        <CertificateHistoryPanel onBack={() => navigate(APP_ROUTES.profile)} profile={profile} />
+        <View style={styles.actions}>
+          <PrimaryButton onPress={() => navigate(APP_ROUTES.certificateDetail)}>Open certificate detail</PrimaryButton>
+          <SecondaryButton onPress={() => navigate(APP_ROUTES.profile)}>Back to profile</SecondaryButton>
+        </View>
+      </Section>
+    );
+  }
+
   return (
     <Section eyebrow="Achievements" subtitle="Certificate list route with history and detail routing." title="Certificates">
       <EmptyState
@@ -633,39 +670,78 @@ function CertificateDetailPage({ navigate, user }: NavigationProps & { user: Use
   );
 }
 
-function ProfilePage({ navigate, onLogout, user }: NavigationProps & { onLogout: () => void; user: UserProfile }) {
+function ProfilePage({ navigate, onLogout, profile }: NavigationProps & { onLogout: () => void; profile: UserAccountProfile }) {
   return (
-    <Section eyebrow="Account" subtitle="Profile route for learner identity, history, and account actions." title="Profile">
-      <View style={styles.metricGrid}>
-        <StatCard label="Learner" value={user.name} />
-        <StatCard label="Email" value={user.email} />
-        <StatCard label="Current plan" value={user.plan} />
-      </View>
+    <Section eyebrow="Account" subtitle="Profile overview, history, subscription, and account management." title="Profile overview">
+      <ProfileSummary
+        onCertificates={() => navigate(APP_ROUTES.certificateHistory)}
+        onEdit={() => navigate(APP_ROUTES.editProfile)}
+        onHistory={() => navigate(APP_ROUTES.learningHistory)}
+        onSettings={() => navigate(APP_ROUTES.settings)}
+        onSubscription={() => navigate(APP_ROUTES.subscription)}
+        profile={profile}
+      />
       <View style={styles.actions}>
-        <PrimaryButton onPress={() => navigate(APP_ROUTES.settings)}>Settings</PrimaryButton>
-        <SecondaryButton onPress={() => navigate(APP_ROUTES.subscription)}>Subscription</SecondaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.dashboard)}>Back to dashboard</SecondaryButton>
         <SecondaryButton onPress={onLogout}>Logout</SecondaryButton>
       </View>
     </Section>
   );
 }
 
-function SettingsPage({ navigate }: NavigationProps) {
+function EditProfilePage({ navigate, profile }: NavigationProps & { profile: UserAccountProfile }) {
   return (
-    <Section eyebrow="Preferences" subtitle="Settings route links account, legal, and subscription areas." title="Settings">
-      <View style={styles.cardGrid}>
-        <RouteCard badge="Privacy" copy="Review the public privacy policy route." onPress={() => navigate(APP_ROUTES.privacyPolicy)} title="Privacy Policy" />
-        <RouteCard badge="Legal" copy="Review the public terms route." onPress={() => navigate(APP_ROUTES.terms)} title="Terms and Conditions" />
-        <RouteCard badge="Billing" copy="Manage plan and future billing portal state." onPress={() => navigate(APP_ROUTES.subscription)} title="Subscription" />
-      </View>
+    <Section eyebrow="Profile" subtitle="Edit your name and active certification path. Changes persist locally." title="Edit profile">
+      <EditProfileForm onCancel={() => navigate(APP_ROUTES.profile)} onSaved={() => navigate(APP_ROUTES.profile)} profile={profile} />
     </Section>
   );
 }
 
-function SubscriptionPage({ navigate }: NavigationProps) {
+function SettingsPage({ navigate, profile }: NavigationProps & { profile: UserAccountProfile }) {
   return (
-    <Section eyebrow="Billing" subtitle="Authenticated subscription route ready for Stripe Checkout and entitlement logic." title="Subscription">
-      <PricingPage isAuthenticated navigate={navigate} />
+    <Section eyebrow="Preferences" subtitle="Account settings, privacy links, and security controls." title="Account settings">
+      <AccountSettingsPanel
+        onChangePassword={() => navigate(APP_ROUTES.changePassword)}
+        onEditProfile={() => navigate(APP_ROUTES.editProfile)}
+        onLegal={() => navigate(APP_ROUTES.privacyPolicy)}
+        profile={profile}
+      />
+    </Section>
+  );
+}
+
+function ChangePasswordPage({ navigate }: NavigationProps) {
+  return (
+    <Section eyebrow="Security" subtitle="Change your local account password." title="Change password">
+      <ChangePasswordForm onCancel={() => navigate(APP_ROUTES.settings)} />
+    </Section>
+  );
+}
+
+function LearningHistoryPage({ navigate, profile }: NavigationProps & { profile: UserAccountProfile }) {
+  return (
+    <Section eyebrow="Learning" subtitle="Recent mock tests, quizzes, and study sessions." title="Learning history">
+      <LearningHistoryPanel onBack={() => navigate(APP_ROUTES.profile)} profile={profile} />
+    </Section>
+  );
+}
+
+function CertificateHistoryPage({ navigate, profile }: NavigationProps & { profile: UserAccountProfile }) {
+  return (
+    <Section eyebrow="Achievements" subtitle="Earned certificate records and verification ids." title="Certificate history">
+      <CertificateHistoryPanel onBack={() => navigate(APP_ROUTES.profile)} profile={profile} />
+    </Section>
+  );
+}
+
+function SubscriptionPage({ navigate, profile }: NavigationProps & { profile: UserAccountProfile }) {
+  return (
+    <Section eyebrow="Billing" subtitle="Authenticated subscription status and plan controls." title="Subscription status">
+      <SubscriptionStatusPanel
+        onBack={() => navigate(APP_ROUTES.profile)}
+        onPricing={() => navigate(APP_ROUTES.pricing)}
+        profile={profile}
+      />
     </Section>
   );
 }

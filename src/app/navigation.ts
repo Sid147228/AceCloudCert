@@ -145,11 +145,35 @@ export const ROUTE_META: Record<AppRoute, RouteMeta> = {
     title: 'Profile',
     subtitle: 'Account, history, and learner profile.'
   },
+  [APP_ROUTES.editProfile]: {
+    access: 'protected',
+    parent: APP_ROUTES.profile,
+    title: 'Edit Profile',
+    subtitle: 'Update your learner name and active certification path.'
+  },
   [APP_ROUTES.settings]: {
     access: 'protected',
     parent: APP_ROUTES.profile,
     title: 'Settings',
     subtitle: 'Account preferences, privacy, and security.'
+  },
+  [APP_ROUTES.changePassword]: {
+    access: 'protected',
+    parent: APP_ROUTES.settings,
+    title: 'Change Password',
+    subtitle: 'Update your local account password.'
+  },
+  [APP_ROUTES.learningHistory]: {
+    access: 'protected',
+    parent: APP_ROUTES.profile,
+    title: 'Learning History',
+    subtitle: 'Review recent tests, scores, and study activity.'
+  },
+  [APP_ROUTES.certificateHistory]: {
+    access: 'protected',
+    parent: APP_ROUTES.profile,
+    title: 'Certificate History',
+    subtitle: 'Review earned AceCloudCert certificates.'
   },
   [APP_ROUTES.subscription]: {
     access: 'protected',
@@ -187,7 +211,11 @@ export const ROUTE_LABELS: Record<AppRoute, string> = {
   [APP_ROUTES.certificates]: 'Certificates',
   [APP_ROUTES.certificateDetail]: 'Certificate Detail',
   [APP_ROUTES.profile]: 'Profile',
+  [APP_ROUTES.editProfile]: 'Edit Profile',
   [APP_ROUTES.settings]: 'Settings',
+  [APP_ROUTES.changePassword]: 'Change Password',
+  [APP_ROUTES.learningHistory]: 'Learning History',
+  [APP_ROUTES.certificateHistory]: 'Certificate History',
   [APP_ROUTES.subscription]: 'Subscription',
   [APP_ROUTES.adminDashboard]: 'Admin'
 };

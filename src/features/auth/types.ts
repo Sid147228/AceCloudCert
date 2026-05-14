@@ -9,6 +9,7 @@ export type AuthAction =
   | 'forgot-password'
   | 'resend-verification'
   | 'verify-email'
+  | 'change-password'
   | 'logout';
 
 export type AuthUser = {
@@ -46,6 +47,12 @@ export type PasswordResetPayload = {
   email: string;
 };
 
+export type ChangePasswordPayload = {
+  userId: string;
+  currentPassword: string;
+  newPassword: string;
+};
+
 export type AuthResult = {
   session: AuthSession;
   user: AuthUser;
@@ -61,6 +68,7 @@ export type AuthErrorCode =
   | 'auth/weak-password';
 
 export type AuthService = {
+  changePassword: (payload: ChangePasswordPayload) => Promise<void>;
   getCurrentSession: () => Promise<AuthSession | null>;
   login: (credentials: LoginCredentials) => Promise<AuthResult>;
   logout: () => Promise<void>;

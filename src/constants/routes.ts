@@ -20,7 +20,11 @@ export const APP_ROUTES = {
   certificates: 'certificates',
   certificateDetail: 'certificate-detail',
   profile: 'profile',
+  editProfile: 'edit-profile',
   settings: 'settings',
+  changePassword: 'change-password',
+  learningHistory: 'learning-history',
+  certificateHistory: 'certificate-history',
   subscription: 'subscription',
   adminDashboard: 'admin-dashboard'
 } as const;
@@ -50,7 +54,11 @@ export const PROTECTED_ROUTES = [
   APP_ROUTES.certificates,
   APP_ROUTES.certificateDetail,
   APP_ROUTES.profile,
+  APP_ROUTES.editProfile,
   APP_ROUTES.settings,
+  APP_ROUTES.changePassword,
+  APP_ROUTES.learningHistory,
+  APP_ROUTES.certificateHistory,
   APP_ROUTES.subscription,
   APP_ROUTES.adminDashboard
 ] as const;

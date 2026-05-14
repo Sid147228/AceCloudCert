@@ -4,6 +4,7 @@ import type {
   AuthService,
   AuthSession,
   AuthUser,
+  ChangePasswordPayload,
   LoginCredentials,
   PasswordResetPayload,
   SignupPayload
@@ -135,6 +136,24 @@ async function updateRecord(updatedRecord: LocalAuthRecord) {
 }
 
 export const authService: AuthService = {
+  async changePassword(payload: ChangePasswordPayload) {
+    const store = await loadStore();
+    const record = findUserById(store, payload.userId);
+
+    if (!record) {
+      throw new AuthServiceError('auth/user-not-found', 'We could not find that account.');
+    }
+
+    if (record.passwordDigest !== createPasswordDigest(record.email, payload.currentPassword)) {
+      throw new AuthServiceError('auth/invalid-credentials', 'Current password is incorrect.');
+    }
+
+    await updateRecord({
+      ...record,
+      passwordDigest: createPasswordDigest(record.email, payload.newPassword)
+    });
+  },
+
   async getCurrentSession() {
     const storedSession = memorySession ?? (await storageService.getJson<AuthSession>(AUTH_SESSION_KEY));
 

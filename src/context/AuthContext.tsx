@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react';
 import type {
   AuthAction,
+  ChangePasswordPayload,
   AuthSession,
   AuthStatus,
   AuthUser,
@@ -12,6 +13,7 @@ import type {
 import { authService, getAuthErrorMessage } from '@/services';
 
 type AuthContextValue = {
+  changePassword: (payload: Omit<ChangePasswordPayload, 'userId'>) => Promise<void>;
   clearError: () => void;
   errorMessage?: string;
   forgotPassword: (payload: PasswordResetPayload) => Promise<void>;
@@ -90,6 +92,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       clearError: () => setErrorMessage(undefined),
+      changePassword: async (payload) => {
+        if (!session?.user) {
+          throw new Error('You must be logged in to change your password.');
+        }
+
+        await runAuthAction('change-password', () => authService.changePassword({ ...payload, userId: session.user.id }));
+      },
       errorMessage,
       forgotPassword: async (payload) => {
         await runAuthAction('forgot-password', () => authService.requestPasswordReset(payload));

@@ -7,6 +7,7 @@ export type {
   AuthSession,
   AuthStatus,
   AuthUser,
+  ChangePasswordPayload,
   FieldErrors,
   ForgotPasswordFormValues,
   LoginCredentials,
