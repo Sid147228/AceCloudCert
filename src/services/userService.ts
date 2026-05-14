@@ -1,5 +1,4 @@
 import { DEFAULT_CERTIFICATION_ID } from '@/constants/app';
-import { certifications } from '@/data';
 import type { AuthUser } from '@/features/auth';
 import type {
   AccountSettings,
@@ -31,61 +30,16 @@ async function saveStore(store: UserProfileStore) {
   await storageService.setJson(USER_PROFILE_STORE_KEY, store);
 }
 
-function getCertificationTitle(certificationId: string) {
-  return certifications.find((certification) => certification.id === certificationId)?.name ?? 'AWS Certified Cloud Practitioner';
-}
-
 function createDefaultProfile(user: AuthUser): UserAccountProfile {
   const joinedAt = user.createdAt;
-  const certificationName = getCertificationTitle(DEFAULT_CERTIFICATION_ID);
 
   return {
     activeCertificationId: DEFAULT_CERTIFICATION_ID,
-    certificateHistory: [
-      {
-        certificateId: 'ACC-AWS-CCP-SAMPLE',
-        certificationId: DEFAULT_CERTIFICATION_ID,
-        certificationName,
-        id: 'certificate-aws-ccp-sample',
-        issuedAt: joinedAt,
-        score: 82
-      }
-    ],
+    certificateHistory: [],
     email: user.email,
     fullName: user.fullName,
     joinedAt,
-    learningHistory: [
-      {
-        certificationId: DEFAULT_CERTIFICATION_ID,
-        completedAt: joinedAt,
-        durationMinutes: 71,
-        id: 'attempt-aws-ccp-mock-1',
-        mode: 'Mock Test',
-        passed: true,
-        score: 82,
-        title: `${certificationName} mock exam`
-      },
-      {
-        certificationId: DEFAULT_CERTIFICATION_ID,
-        completedAt: joinedAt,
-        durationMinutes: 18,
-        id: 'attempt-aws-ccp-quiz-1',
-        mode: 'Quiz',
-        passed: true,
-        score: 76,
-        title: 'Cloud concepts quiz'
-      },
-      {
-        certificationId: DEFAULT_CERTIFICATION_ID,
-        completedAt: joinedAt,
-        durationMinutes: 24,
-        id: 'study-iam-basics',
-        mode: 'Study Session',
-        passed: true,
-        score: 100,
-        title: 'IAM basics study session'
-      }
-    ],
+    learningHistory: [],
     plan: user.plan,
     settings: defaultSettings,
     updatedAt: new Date().toISOString(),

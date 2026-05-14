@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { AppCard, FeatureCard, StatCard } from '@/components/cards';
+import { AppCard, StatCard } from '@/components/cards';
 import { DomainProgressList } from '@/components/charts';
 import { InputField, SelectField } from '@/components/forms';
 import { AppShell, SectionHeader } from '@/components/layout';
@@ -16,6 +16,7 @@ import { EmailVerificationNotice, ForgotPasswordForm, LoginForm, SignupForm } fr
 import type { AuthUser } from '@/features/auth';
 import { CertificationCatalogue, CertificationDetail } from '@/features/certifications/components';
 import type { CertificationFilters } from '@/features/certifications';
+import { buildDashboardOverview } from '@/features/dashboard';
 import { filterKnowledgeTopics, getKnowledgeCategories, getRelatedQuestions } from '@/features/knowledge-base';
 import type { KnowledgeTopicFilters } from '@/features/knowledge-base';
 import {
@@ -47,15 +48,12 @@ import {
   ProfileSummary,
   SubscriptionStatusPanel
 } from '@/features/profile/components';
-import { getActiveCertificationTitle, getProfileStats } from '@/features/profile';
 import type { UserAccountProfile } from '@/features/profile';
 import { ROUTE_LABELS, ROUTE_META, getBreadcrumbs, getNavigationRoute, isProtectedRoute } from '@/app/navigation';
-import { featureModules } from '@/features';
 import { useAppNavigation } from '@/hooks';
-import { getAvailableFeatures } from '@/lib';
 import { analyticsService, serviceReadiness, testService } from '@/services';
 import type { AppRoute, Certification, KnowledgeTopic, LegalPage, ServiceReadinessItem, UserProfile } from '@/types';
-import { calculateReadinessScore, countQuestionsByDomain, formatCount, formatPercent } from '@/utils';
+import { countQuestionsByDomain, formatCount, formatPercent } from '@/utils';
 
 const authEntryRoutes = new Set<AppRoute>([APP_ROUTES.login, APP_ROUTES.signup, APP_ROUTES.forgotPassword]);
 
@@ -116,7 +114,6 @@ function AceCloudCertRoutes() {
   const [timerTick, setTimerTick] = useState(Date.now());
 
   const domainCounts = useMemo(() => countQuestionsByDomain(questionBank), []);
-  const availableFeatures = useMemo(() => getAvailableFeatures(featureModules), []);
   const selectedCertification =
     certifications.find((certification) => certification.id === selectedCertificationId) ?? certifications[0];
   const selectedKnowledgeTopic =
@@ -412,14 +409,23 @@ function AceCloudCertRoutes() {
       ) : activeRoute === APP_ROUTES.dashboard ? (
         profile ? (
           <DashboardPage
+            activeSession={activeTestSession}
             analytics={testAnalytics}
-            availableFeatureCount={availableFeatures.length}
-            domainCounts={domainCounts}
             navigate={navigate}
             onAttemptSelect={(attempt) => {
               setLatestAttempt(attempt);
               navigate(APP_ROUTES.testResult);
             }}
+            onContinueLearning={(topic) => {
+              if (topic) {
+                openKnowledgeTopic(topic);
+                return;
+              }
+
+              navigate(APP_ROUTES.knowledgeBase);
+            }}
+            onStartTestMode={openTestMode}
+            onStartTopicQuiz={startKnowledgeTopicQuiz}
             profile={profile}
           />
         ) : (
@@ -715,55 +721,97 @@ function LegalPageContent({ legalPageId }: { legalPageId: LegalPage['id'] }) {
 }
 
 function DashboardPage({
+  activeSession,
   analytics,
-  availableFeatureCount,
-  domainCounts,
   navigate,
+  onContinueLearning,
   onAttemptSelect,
+  onStartTestMode,
+  onStartTopicQuiz,
   profile
 }: NavigationProps & {
+  activeSession: TestSession | null;
   analytics: TestAnalytics;
-  availableFeatureCount: number;
-  domainCounts: Record<string, number>;
+  onContinueLearning: (topic?: KnowledgeTopic) => void;
   onAttemptSelect: (attempt: TestAttempt) => void;
+  onStartTestMode: (mode: TestModeId) => void;
+  onStartTopicQuiz: (topic: KnowledgeTopic) => void;
   profile: UserAccountProfile;
 }) {
-  const readiness = calculateReadinessScore(questionBank.length, 0);
-  const activeCertificationTitle = getActiveCertificationTitle(profile);
-  const stats = getProfileStats(profile);
-  const testsCompleted = analytics.testsCompleted || stats.testsCompleted;
-  const averageScore = analytics.testsCompleted > 0 ? analytics.averageScore : stats.averageScore;
+  const overview = buildDashboardOverview({
+    analytics,
+    certifications,
+    knowledgeTopics,
+    profile
+  });
+  const firstName = profile.fullName.trim().split(/\s+/)[0] || profile.fullName;
+  const averageScore = analytics.testsCompleted > 0 ? formatPercent(analytics.averageScore) : 'No data';
+  const nextLessonTitle = overview.recommendedLesson?.title ?? 'Open the knowledge base';
 
   return (
     <>
-      <AppCard style={styles.hero}>
-        <SectionHeader
-          eyebrow="Protected route"
-          subtitle="This dashboard is the authenticated app entry point with working navigation into every major product area."
-          title={`Welcome, ${profile.fullName}`}
-        />
-        <ToastNotification message="The mock engine is live with timed attempts, saved progress, scoring, and answer review." title="Workspace ready" tone="success" />
-        <View style={styles.actions}>
-          <PrimaryButton onPress={() => navigate(APP_ROUTES.mockTest)}>Start mock test</PrimaryButton>
-          <SecondaryButton onPress={() => navigate(APP_ROUTES.knowledgeBase)}>Continue learning</SecondaryButton>
-          <SecondaryButton onPress={() => navigate(APP_ROUTES.subscription)}>Upgrade plan</SecondaryButton>
+      <AppCard style={styles.dashboardHero}>
+        <View style={styles.dashboardHeroMain}>
+          <View style={styles.stack}>
+            <Badge tone="primary">Learner dashboard</Badge>
+            <SectionHeader
+              subtitle={`${overview.activeCertification.provider} ${overview.activeCertification.examCode} path`}
+              title={`Welcome back, ${firstName}`}
+            />
+            <Text style={styles.copy}>
+              Your active path is {overview.activeCertification.name}. Keep building lessons, attempts, and
+              certificates toward exam readiness.
+            </Text>
+          </View>
+          <View style={styles.dashboardProgressPanel}>
+            <Text style={styles.dashboardProgressValue}>{formatPercent(overview.progressPercent)}</Text>
+            <Text style={styles.copyStrong}>Current path progress</Text>
+            <ProgressBar value={overview.progressPercent} />
+            <Text style={styles.microCopy}>
+              {overview.completedStudyTopics}/{overview.totalStudyTopics} lessons completed
+            </Text>
+          </View>
         </View>
+        <View style={styles.actions}>
+          <PrimaryButton onPress={() => onContinueLearning(overview.recommendedLesson)}>Continue learning</PrimaryButton>
+          <SecondaryButton onPress={() => onStartTestMode('full-mock')}>Start mock exam</SecondaryButton>
+          <SecondaryButton onPress={() => onStartTestMode('quick-quiz')}>Quick quiz</SecondaryButton>
+        </View>
+        {activeSession ? (
+          <ToastNotification
+            message={`${getModeTitle(activeSession.mode)} is still in progress. Resume it from Tests when you are ready.`}
+            title="Incomplete attempt saved"
+            tone="info"
+          />
+        ) : null}
       </AppCard>
 
       <View style={styles.metricGrid}>
-        <StatCard label="Active path" value={activeCertificationTitle} />
-        <StatCard label="Tests completed" value={testsCompleted} />
-        <StatCard label="Average score" value={formatPercent(averageScore)} />
-        <StatCard label="Pass rate" value={formatPercent(analytics.passRate)} />
+        <StatCard label="Current certification" value={overview.activeCertification.name} />
+        <StatCard label="Progress" value={formatPercent(overview.progressPercent)} />
         <StatCard label="Study streak" value={`${analytics.studyStreak}d`} />
+        <StatCard label="Average score" value={averageScore} />
+        <StatCard label="Tests completed" value={analytics.testsCompleted} />
+        <StatCard label="Certificates earned" value={overview.certificatesEarned} />
       </View>
 
-      <Section eyebrow="Analytics" subtitle={analytics.recommendedNextAction} title="Performance snapshot">
-        <View style={styles.metricGrid}>
-          <StatCard label="Readiness baseline" value={formatPercent(readiness)} />
-          <StatCard label="Strongest domain" value={analytics.strongestDomain?.domain ?? 'Not enough data'} />
-          <StatCard label="Weakest domain" value={analytics.weakestDomain?.domain ?? 'Not enough data'} />
+      <Section eyebrow="Next best action" subtitle={analytics.recommendedNextAction} title="Learning plan">
+        <View style={styles.cardGrid}>
+          <RecommendedLessonCard
+            onContinueLearning={onContinueLearning}
+            onStartTopicQuiz={onStartTopicQuiz}
+            topic={overview.recommendedLesson}
+          />
+          <WeakAreasCard
+            onPractice={() => onStartTestMode('weak-area-practice')}
+            onQuickQuiz={() => onStartTestMode('quick-quiz')}
+            testsCompleted={analytics.testsCompleted}
+            weakAreas={overview.weakAreas}
+          />
         </View>
+      </Section>
+
+      <Section eyebrow="Analytics" subtitle="Built from locally saved mock exams and quiz attempts." title="Performance snapshot">
         <View style={styles.cardGrid}>
           <ScoreTrendCard trend={analytics.scoreTrend} />
           <DomainPerformanceCards domainPerformance={analytics.domainPerformance} limit={4} />
@@ -771,18 +819,187 @@ function DashboardPage({
         </View>
       </Section>
 
-      <Section eyebrow="Quick actions" title="Route map">
-        <View style={styles.metricGrid}>
-          <StatCard label="Feature modules" value={availableFeatureCount} />
-          <StatCard label="Domains mapped" value={Object.keys(domainCounts).length} />
-        </View>
+      <Section eyebrow="Quick actions" title="Keep moving">
         <View style={styles.cardGrid}>
-          {featureModules.map((feature) => (
-            <FeatureCard key={feature.id} feature={feature} onPress={() => navigate(feature.route)} />
-          ))}
+          <DashboardActionCard
+            badge="Lesson"
+            copy={nextLessonTitle}
+            cta="Continue learning"
+            onPress={() => onContinueLearning(overview.recommendedLesson)}
+            title="Continue learning"
+          />
+          <DashboardActionCard
+            badge="65 questions"
+            copy="Run a timed AWS Cloud Practitioner mock exam."
+            cta="Start mock exam"
+            onPress={() => onStartTestMode('full-mock')}
+            title="Start mock exam"
+          />
+          <DashboardActionCard
+            badge="20 questions"
+            copy="Practice with a shorter quiz session."
+            cta="Quick quiz"
+            onPress={() => onStartTestMode('quick-quiz')}
+            title="Quick quiz"
+          />
+          <DashboardActionCard
+            badge={overview.weakAreas.length > 0 ? `${overview.weakAreas.length} weak areas` : 'Adaptive'}
+            copy={overview.weakAreas[0]?.domain ?? 'Use recent attempts to generate focused practice.'}
+            cta="Review weak areas"
+            onPress={() => onStartTestMode('weak-area-practice')}
+            title="Review weak areas"
+          />
+          <DashboardActionCard
+            badge={String(overview.certificatesEarned)}
+            copy="Open earned certificate records and previews."
+            cta="View certificates"
+            onPress={() => navigate(APP_ROUTES.certificates)}
+            title="View certificates"
+          />
+          <DashboardActionCard
+            badge={profile.plan}
+            copy="Compare Silver and Gold access for more certifications."
+            cta="Upgrade plan"
+            onPress={() => navigate(APP_ROUTES.subscription)}
+            title="Upgrade plan"
+          />
         </View>
       </Section>
     </>
+  );
+}
+
+function RecommendedLessonCard({
+  onContinueLearning,
+  onStartTopicQuiz,
+  topic
+}: {
+  onContinueLearning: (topic?: KnowledgeTopic) => void;
+  onStartTopicQuiz: (topic: KnowledgeTopic) => void;
+  topic?: KnowledgeTopic;
+}) {
+  if (!topic) {
+    return (
+      <AppCard style={styles.flexCard}>
+        <Text style={styles.cardTitle}>Recommended next lesson</Text>
+        <Text style={styles.copy}>Knowledge base recommendations will appear when an active certification has lessons.</Text>
+        <PrimaryButton onPress={() => onContinueLearning()}>Open knowledge base</PrimaryButton>
+      </AppCard>
+    );
+  }
+
+  return (
+    <AppCard style={styles.flexCard}>
+      <View style={styles.row}>
+        <Badge tone="info">{topic.category}</Badge>
+        <Text style={styles.dateText}>{topic.estimatedReadingMinutes} min read</Text>
+      </View>
+      <Text style={styles.cardTitle}>Recommended next lesson</Text>
+      <Text style={styles.copyStrong}>{topic.title}</Text>
+      <Text style={styles.copy}>{topic.summary}</Text>
+      <View style={styles.actions}>
+        <PrimaryButton onPress={() => onContinueLearning(topic)} size="sm">
+          Open lesson
+        </PrimaryButton>
+        <SecondaryButton onPress={() => onStartTopicQuiz(topic)} size="sm">
+          Related quiz
+        </SecondaryButton>
+      </View>
+    </AppCard>
+  );
+}
+
+function WeakAreasCard({
+  onPractice,
+  onQuickQuiz,
+  testsCompleted,
+  weakAreas
+}: {
+  onPractice: () => void;
+  onQuickQuiz: () => void;
+  testsCompleted: number;
+  weakAreas: TestAnalytics['domainPerformance'];
+}) {
+  if (testsCompleted === 0) {
+    return (
+      <AppCard style={styles.flexCard}>
+        <Text style={styles.cardTitle}>Weak areas</Text>
+        <Text style={styles.copy}>
+          Complete a quiz or mock exam to unlock domain-level weak area analysis from your saved attempts.
+        </Text>
+        <PrimaryButton onPress={onQuickQuiz} size="sm">
+          Start quick quiz
+        </PrimaryButton>
+      </AppCard>
+    );
+  }
+
+  if (weakAreas.length === 0) {
+    return (
+      <AppCard style={styles.flexCard}>
+        <View style={styles.row}>
+          <Text style={styles.cardTitle}>Weak areas</Text>
+          <Badge tone="success">On track</Badge>
+        </View>
+        <Text style={styles.copy}>
+          No saved domain is below the pass mark. Keep validating your readiness with another timed attempt.
+        </Text>
+        <SecondaryButton onPress={onPractice} size="sm">
+          Practice anyway
+        </SecondaryButton>
+      </AppCard>
+    );
+  }
+
+  return (
+    <AppCard style={styles.flexCard}>
+      <View style={styles.row}>
+        <Text style={styles.cardTitle}>Weak areas</Text>
+        <Badge tone="danger">{weakAreas.length} focus</Badge>
+      </View>
+      <View style={styles.domainList}>
+        {weakAreas.map((domain) => (
+          <View key={domain.domain} style={styles.domainRow}>
+            <View style={styles.row}>
+              <Text style={styles.copyStrong}>{domain.domain}</Text>
+              <Text style={styles.copy}>{formatPercent(domain.scorePercent)}</Text>
+            </View>
+            <ProgressBar value={domain.scorePercent} />
+            <Text style={styles.microCopy}>
+              {domain.correct}/{domain.total} correct across {formatCount(domain.attempts, 'attempt')}
+            </Text>
+          </View>
+        ))}
+      </View>
+      <PrimaryButton onPress={onPractice} size="sm">
+        Review weak areas
+      </PrimaryButton>
+    </AppCard>
+  );
+}
+
+function DashboardActionCard({
+  badge,
+  copy,
+  cta,
+  onPress,
+  title
+}: {
+  badge: string;
+  copy: string;
+  cta: string;
+  onPress: () => void;
+  title: string;
+}) {
+  return (
+    <AppCard style={styles.dashboardActionCard}>
+      <Badge tone="neutral">{badge}</Badge>
+      <Text style={styles.cardTitle}>{title}</Text>
+      <Text style={styles.copy}>{copy}</Text>
+      <SecondaryButton onPress={onPress} size="sm">
+        {cta}
+      </SecondaryButton>
+    </AppCard>
   );
 }
 
@@ -1820,6 +2037,40 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
     lineHeight: 21
+  },
+  dashboardActionCard: {
+    flexBasis: 220,
+    flexGrow: 1,
+    justifyContent: 'space-between',
+    minHeight: 190
+  },
+  dashboardHero: {
+    gap: theme.spacing.lg,
+    padding: theme.spacing.xl
+  },
+  dashboardHeroMain: {
+    alignItems: 'stretch',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.lg,
+    justifyContent: 'space-between'
+  },
+  dashboardProgressPanel: {
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radii.md,
+    borderWidth: 1,
+    flexBasis: 260,
+    flexGrow: 1,
+    gap: theme.spacing.sm,
+    maxWidth: 380,
+    padding: theme.spacing.md
+  },
+  dashboardProgressValue: {
+    color: theme.colors.primary,
+    fontSize: 42,
+    fontWeight: '900',
+    lineHeight: 48
   },
   dateText: {
     color: theme.colors.textMuted,
