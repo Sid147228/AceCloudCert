@@ -2,4 +2,5 @@ export type { AuthService, BillingService, CertificateService, ProgressService, 
 export { authService, getAuthErrorMessage } from './authService';
 export { serviceReadiness } from './readiness';
 export { storageService } from './storageService';
+export { testService } from './testService';
 export { userService } from './userService';

@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AppCard, FeatureCard, StatCard } from '@/components/cards';
 import { DomainProgressList } from '@/components/charts';
+import { SelectField } from '@/components/forms';
 import { AppShell, SectionHeader } from '@/components/layout';
-import { Badge, EmptyState, LoadingState, PrimaryButton, ProgressBar, SecondaryButton, Table, Tabs, ToastNotification } from '@/components/ui';
+import { Badge, EmptyState, LoadingState, Modal, PrimaryButton, ProgressBar, SecondaryButton, Table, Tabs, ToastNotification } from '@/components/ui';
 import type { TableColumn } from '@/components/ui';
 import { APP_NAME, DEFAULT_CERTIFICATION_ID, PASS_MARK_PERCENT } from '@/constants/app';
 import { APP_ROUTES } from '@/constants/routes';
@@ -15,6 +16,24 @@ import { EmailVerificationNotice, ForgotPasswordForm, LoginForm, SignupForm } fr
 import type { AuthUser } from '@/features/auth';
 import { CertificationCatalogue, CertificationDetail } from '@/features/certifications/components';
 import type { CertificationFilters } from '@/features/certifications';
+import {
+  TEST_MODE_CONFIGS,
+  answerQuestion,
+  createTestSession,
+  getAnsweredCount,
+  getCurrentQuestionView,
+  getElapsedSeconds,
+  getMarkedForReviewCount,
+  getModeTitle,
+  getRemainingSeconds,
+  getSessionQuestions,
+  getTestModeConfig,
+  getUnansweredCount,
+  goToQuestion,
+  submitTestSession,
+  toggleQuestionReview
+} from '@/features/tests';
+import type { TestAttempt, TestModeId, TestSession } from '@/features/tests';
 import {
   AccountSettingsPanel,
   CertificateHistoryPanel,
@@ -30,7 +49,7 @@ import { ROUTE_LABELS, ROUTE_META, getBreadcrumbs, getNavigationRoute, isProtect
 import { featureModules } from '@/features';
 import { useAppNavigation } from '@/hooks';
 import { getAvailableFeatures } from '@/lib';
-import { serviceReadiness } from '@/services';
+import { serviceReadiness, testService } from '@/services';
 import type { AppRoute, Certification, LegalPage, ServiceReadinessItem, UserProfile } from '@/types';
 import { calculateReadinessScore, countQuestionsByDomain, formatCount, formatPercent } from '@/utils';
 
@@ -70,7 +89,7 @@ export default function AceCloudCertApp() {
 function AceCloudCertRoutes() {
   const { activeRoute, navigate: setActiveRoute } = useAppNavigation(APP_ROUTES.landing);
   const { isAuthenticated, isInitializing, logout, status, user } = useAuth();
-  const { isProfileLoading, profile } = useUserProfile();
+  const { addLearningHistoryItem, isProfileLoading, profile } = useUserProfile();
   const [redirectAfterLogin, setRedirectAfterLogin] = useState<AppRoute>(APP_ROUTES.dashboard);
   const [activeTestTab, setActiveTestTab] = useState('overview');
   const [certificationFilters, setCertificationFilters] = useState<CertificationFilters>({
@@ -79,14 +98,79 @@ function AceCloudCertRoutes() {
     search: ''
   });
   const [selectedCertificationId, setSelectedCertificationId] = useState(DEFAULT_CERTIFICATION_ID);
+  const [selectedTestDomain, setSelectedTestDomain] = useState('Cloud concepts');
+  const [selectedTestMode, setSelectedTestMode] = useState<TestModeId>('full-mock');
+  const [activeTestSession, setActiveTestSession] = useState<TestSession | null>(null);
+  const [testAttempts, setTestAttempts] = useState<readonly TestAttempt[]>([]);
+  const [latestAttempt, setLatestAttempt] = useState<TestAttempt | null>(null);
+  const [timerTick, setTimerTick] = useState(Date.now());
 
   const domainCounts = useMemo(() => countQuestionsByDomain(questionBank), []);
   const availableFeatures = useMemo(() => getAvailableFeatures(featureModules), []);
   const selectedCertification =
     certifications.find((certification) => certification.id === selectedCertificationId) ?? certifications[0];
+  const selectedTestModeConfig = getTestModeConfig(selectedTestMode);
   const userProfile = profile ? toUserProfile(profile) : null;
   const activeMenuRoute =
     isAuthenticated && !isProtectedRoute(activeRoute) ? getAuthenticatedPublicMenuRoute(activeRoute) : getNavigationRoute(activeRoute);
+
+  useEffect(() => {
+    if (!isAuthenticated || !user) {
+      setActiveTestSession(null);
+      setLatestAttempt(null);
+      setTestAttempts([]);
+      return;
+    }
+
+    let active = true;
+    const currentUserId = user.id;
+
+    async function loadTestState() {
+      const [storedSession, storedAttempts] = await Promise.all([
+        testService.getActiveSession(currentUserId),
+        testService.listAttempts(currentUserId)
+      ]);
+
+      if (!active) {
+        return;
+      }
+
+      setActiveTestSession(storedSession);
+      setTestAttempts(storedAttempts);
+      setLatestAttempt(storedAttempts[0] ?? null);
+
+      if (storedSession) {
+        setSelectedTestMode(storedSession.mode);
+        if (storedSession.domain) {
+          setSelectedTestDomain(storedSession.domain);
+        }
+      }
+    }
+
+    void loadTestState();
+
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated, user]);
+
+  useEffect(() => {
+    if (!activeTestSession) {
+      return undefined;
+    }
+
+    const timer = setInterval(() => {
+      setTimerTick(Date.now());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [activeTestSession]);
+
+  useEffect(() => {
+    if (activeTestSession && getRemainingSeconds(activeTestSession, timerTick) === 0) {
+      void completeTestSession(activeTestSession);
+    }
+  }, [activeTestSession, timerTick]);
 
   function navigate(route: AppRoute) {
     if (!isAuthenticated && isProtectedRoute(route)) {
@@ -137,6 +221,99 @@ function AceCloudCertRoutes() {
     }
 
     navigate(APP_ROUTES.certificationDetail);
+  }
+
+  function openTestMode(mode: TestModeId) {
+    setSelectedTestMode(mode);
+    navigate(mode === 'full-mock' ? APP_ROUTES.mockTest : APP_ROUTES.quiz);
+  }
+
+  async function startSelectedTest(mode = selectedTestMode, domain = selectedTestDomain) {
+    if (!user) {
+      return;
+    }
+
+    const session = createTestSession(
+      {
+        certificationId: DEFAULT_CERTIFICATION_ID,
+        domain: mode === 'topic-quiz' ? domain : undefined,
+        mode,
+        userId: user.id
+      },
+      testAttempts
+    );
+
+    setActiveTestSession(session);
+    setTimerTick(Date.now());
+    await testService.saveActiveSession(session);
+  }
+
+  function resumeActiveTest() {
+    if (!activeTestSession) {
+      return;
+    }
+
+    setSelectedTestMode(activeTestSession.mode);
+    setSelectedTestDomain(activeTestSession.domain ?? selectedTestDomain);
+    navigate(activeTestSession.mode === 'full-mock' ? APP_ROUTES.mockTest : APP_ROUTES.quiz);
+  }
+
+  function persistTestSession(session: TestSession) {
+    setActiveTestSession(session);
+    void testService.saveActiveSession(session);
+  }
+
+  function selectTestAnswer(questionId: string, optionId: string) {
+    if (!activeTestSession) {
+      return;
+    }
+
+    persistTestSession(answerQuestion(activeTestSession, questionId, optionId));
+  }
+
+  function toggleReviewFlag(questionId: string) {
+    if (!activeTestSession) {
+      return;
+    }
+
+    persistTestSession(toggleQuestionReview(activeTestSession, questionId));
+  }
+
+  function moveToQuestion(index: number) {
+    if (!activeTestSession) {
+      return;
+    }
+
+    persistTestSession(goToQuestion(activeTestSession, index));
+  }
+
+  async function completeTestSession(session = activeTestSession) {
+    if (!session) {
+      return;
+    }
+
+    const attempt = submitTestSession(session);
+    const storedAttempt = await testService.saveAttempt(attempt);
+    const storedAttempts = await testService.listAttempts(session.userId);
+
+    setLatestAttempt(storedAttempt);
+    setTestAttempts(storedAttempts);
+    setActiveTestSession(null);
+
+    if (profile) {
+      await addLearningHistoryItem({
+        certificationId: storedAttempt.certificationId,
+        completedAt: storedAttempt.completedAt,
+        durationMinutes: Math.max(1, Math.ceil(storedAttempt.timeTakenSeconds / 60)),
+        id: storedAttempt.id,
+        mode: storedAttempt.mode === 'full-mock' ? 'Mock Test' : 'Quiz',
+        passed: storedAttempt.passed,
+        score: storedAttempt.scorePercent,
+        title: getAttemptTitle(storedAttempt)
+      });
+    }
+
+    navigate(APP_ROUTES.testResult);
   }
 
   function showProtectedFallback() {
@@ -226,15 +403,53 @@ function AceCloudCertRoutes() {
           showProtectedFallback()
         )
       ) : activeRoute === APP_ROUTES.tests ? (
-        <TestsPage activeTab={activeTestTab} domainCounts={domainCounts} navigate={navigate} setActiveTab={setActiveTestTab} />
+        <TestsPage
+          activeSession={activeTestSession}
+          activeTab={activeTestTab}
+          attempts={testAttempts}
+          domainCounts={domainCounts}
+          navigate={navigate}
+          onDomainChange={setSelectedTestDomain}
+          onAttemptSelect={(attempt) => {
+            setLatestAttempt(attempt);
+            navigate(APP_ROUTES.testResult);
+          }}
+          onModeSelect={openTestMode}
+          onResume={resumeActiveTest}
+          selectedDomain={selectedTestDomain}
+          setActiveTab={setActiveTestTab}
+        />
       ) : activeRoute === APP_ROUTES.mockTest ? (
-        <MockTestPage navigate={navigate} />
+        <TestSessionPage
+          activeSession={activeTestSession}
+          mode="full-mock"
+          navigate={navigate}
+          onAnswer={selectTestAnswer}
+          onExit={() => navigate(APP_ROUTES.tests)}
+          onGoToQuestion={moveToQuestion}
+          onStart={() => void startSelectedTest('full-mock')}
+          onSubmit={() => void completeTestSession()}
+          onToggleReview={toggleReviewFlag}
+          timerNow={timerTick}
+        />
       ) : activeRoute === APP_ROUTES.quiz ? (
-        <QuizPage navigate={navigate} />
+        <TestSessionPage
+          activeSession={activeTestSession}
+          mode={selectedTestModeConfig.id === 'full-mock' ? 'quick-quiz' : selectedTestModeConfig.id}
+          navigate={navigate}
+          onAnswer={selectTestAnswer}
+          onExit={() => navigate(APP_ROUTES.tests)}
+          onGoToQuestion={moveToQuestion}
+          onStart={() => void startSelectedTest(selectedTestModeConfig.id === 'full-mock' ? 'quick-quiz' : selectedTestModeConfig.id)}
+          onSubmit={() => void completeTestSession()}
+          onToggleReview={toggleReviewFlag}
+          selectedDomain={selectedTestDomain}
+          timerNow={timerTick}
+        />
       ) : activeRoute === APP_ROUTES.testResult ? (
-        <TestResultPage navigate={navigate} />
+        <TestResultPage attempt={latestAttempt} navigate={navigate} onRetry={() => openTestMode(latestAttempt?.mode ?? 'full-mock')} />
       ) : activeRoute === APP_ROUTES.testReview ? (
-        <TestReviewPage navigate={navigate} />
+        <TestReviewPage attempt={latestAttempt} navigate={navigate} />
       ) : activeRoute === APP_ROUTES.knowledgeBase ? (
         <KnowledgeBasePage navigate={navigate} />
       ) : activeRoute === APP_ROUTES.knowledgeTopicDetail ? (
@@ -312,6 +527,31 @@ function toUserProfile(profile: UserAccountProfile): UserProfile {
     name: profile.fullName,
     plan: profile.plan
   };
+}
+
+function getAttemptTitle(attempt: TestAttempt) {
+  if (attempt.mode === 'topic-quiz' && attempt.domain) {
+    return `${attempt.domain} topic quiz`;
+  }
+
+  return `${getModeTitle(attempt.mode)} - AWS Certified Cloud Practitioner`;
+}
+
+function formatDuration(totalSeconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const seconds = safeSeconds % 60;
+
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat('en', {
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    month: 'short'
+  }).format(new Date(value));
 }
 
 function LandingPage({ isAuthenticated, navigate }: NavigationProps & { isAuthenticated: boolean }) {
@@ -440,7 +680,7 @@ function DashboardPage({
           subtitle="This dashboard is the authenticated app entry point with working navigation into every major product area."
           title={`Welcome, ${profile.fullName}`}
         />
-        <ToastNotification message="Navigation and layout architecture are wired. Feature logic comes next." title="Workspace ready" tone="success" />
+        <ToastNotification message="The mock engine is live with timed attempts, saved progress, scoring, and answer review." title="Workspace ready" tone="success" />
         <View style={styles.actions}>
           <PrimaryButton onPress={() => navigate(APP_ROUTES.mockTest)}>Start mock test</PrimaryButton>
           <SecondaryButton onPress={() => navigate(APP_ROUTES.knowledgeBase)}>Continue learning</SecondaryButton>
@@ -519,112 +759,405 @@ function CertificationDetailPage({
 }
 
 function TestsPage({
+  activeSession,
   activeTab,
+  attempts,
   domainCounts,
   navigate,
+  onDomainChange,
+  onAttemptSelect,
+  onModeSelect,
+  onResume,
+  selectedDomain,
   setActiveTab
 }: NavigationProps & {
+  activeSession: TestSession | null;
   activeTab: string;
+  attempts: readonly TestAttempt[];
   domainCounts: Record<string, number>;
+  onDomainChange: (value: string) => void;
+  onAttemptSelect: (attempt: TestAttempt) => void;
+  onModeSelect: (mode: TestModeId) => void;
+  onResume: () => void;
+  selectedDomain: string;
   setActiveTab: (value: string) => void;
 }) {
+  const domainOptions = Object.keys(domainCounts).map((domain) => ({ label: domain, value: domain }));
+
   return (
-    <Section eyebrow="Exam engine" subtitle="Test engine routes are separated for mock tests, quizzes, results, and reviews." title="Tests">
+    <Section eyebrow="Exam engine" subtitle="Choose a real timed practice mode, resume incomplete work, and review saved attempts." title="Tests">
+      {activeSession ? (
+        <AppCard style={styles.resumeCard}>
+          <View style={styles.row}>
+            <View style={styles.stack}>
+              <Badge tone="primary">Resume available</Badge>
+              <Text style={styles.cardTitle}>{getModeTitle(activeSession.mode)}</Text>
+              <Text style={styles.copy}>
+                {getAnsweredCount(activeSession)} answered, {getUnansweredCount(activeSession)} unanswered,{' '}
+                {getMarkedForReviewCount(activeSession)} marked for review.
+              </Text>
+            </View>
+            <PrimaryButton onPress={onResume}>Resume attempt</PrimaryButton>
+          </View>
+        </AppCard>
+      ) : null}
+
       <Tabs
         activeId={activeTab}
         onChange={setActiveTab}
         tabs={[
-          { id: 'overview', label: 'Overview' },
-          { id: 'domains', label: 'Domains' }
+          { id: 'overview', label: 'Modes' },
+          { id: 'domains', label: 'Domains' },
+          { id: 'history', label: 'History' }
         ]}
       />
       {activeTab === 'domains' ? (
         <AppCard>
           <DomainProgressList domainCounts={domainCounts} />
         </AppCard>
+      ) : activeTab === 'history' ? (
+        attempts.length > 0 ? (
+          <View style={styles.cardGrid}>
+            {attempts.slice(0, 6).map((attempt) => (
+              <AppCard key={attempt.id} style={styles.flexCard}>
+                <View style={styles.row}>
+                  <Badge tone={attempt.passed ? 'success' : 'danger'}>{attempt.passed ? 'Passed' : 'Needs work'}</Badge>
+                  <Text style={styles.dateText}>{formatDateTime(attempt.completedAt)}</Text>
+                </View>
+                <Text style={styles.cardTitle}>{getAttemptTitle(attempt)}</Text>
+                <Text style={styles.copy}>
+                  {attempt.correctCount}/{attempt.questionIds.length} correct | {formatDuration(attempt.timeTakenSeconds)}
+                </Text>
+                <ProgressBar value={attempt.scorePercent} />
+                <PrimaryButton
+                  onPress={() => {
+                    onAttemptSelect(attempt);
+                  }}
+                >
+                  Open result
+                </PrimaryButton>
+              </AppCard>
+            ))}
+          </View>
+        ) : (
+          <EmptyState
+            actionLabel="Start full mock"
+            description="Completed mock exams and quizzes will be saved here with scores, timing, and pass status."
+            onAction={() => onModeSelect('full-mock')}
+            title="No saved attempts yet"
+          />
+        )
       ) : (
-        <View style={styles.cardGrid}>
-          <RouteCard badge="Mock" copy="Full exam route with timer, progress, and submit navigation shell." onPress={() => navigate(APP_ROUTES.mockTest)} title="Mock test" />
-          <RouteCard badge="Quiz" copy="Focused topic quiz route for short practice sessions." onPress={() => navigate(APP_ROUTES.quiz)} title="Quick quiz" />
-          <RouteCard badge="Results" copy="Score summary and next-step layout." onPress={() => navigate(APP_ROUTES.testResult)} title="Latest result" />
-          <RouteCard badge="Review" copy="Answer review route with explanations." onPress={() => navigate(APP_ROUTES.testReview)} title="Answer review" />
-        </View>
+        <>
+          <View style={styles.metricGrid}>
+            <StatCard label="Pass mark" value={formatPercent(PASS_MARK_PERCENT)} />
+            <StatCard label="Question bank" value={formatCount(questionBank.length, 'question')} />
+            <StatCard label="Domains" value={Object.keys(domainCounts).length} />
+          </View>
+          <View style={styles.cardGrid}>
+            {TEST_MODE_CONFIGS.map((config) => (
+              <AppCard key={config.id} style={styles.flexCard}>
+                <View style={styles.row}>
+                  <Badge tone={config.id === 'full-mock' ? 'primary' : 'info'}>{config.questionCount} questions</Badge>
+                  <Text style={styles.dateText}>{config.durationMinutes}m</Text>
+                </View>
+                <Text style={styles.cardTitle}>{config.title}</Text>
+                <Text style={styles.copy}>{config.description}</Text>
+                {config.requiresDomain ? (
+                  <SelectField label="Domain" onChange={onDomainChange} options={domainOptions} value={selectedDomain} />
+                ) : null}
+                <PrimaryButton onPress={() => onModeSelect(config.id)}>
+                  {activeSession?.mode === config.id ? 'Resume' : 'Start'}
+                </PrimaryButton>
+              </AppCard>
+            ))}
+          </View>
+        </>
       )}
     </Section>
   );
 }
 
-function MockTestPage({ navigate }: NavigationProps) {
+function TestSessionPage({
+  activeSession,
+  mode,
+  navigate,
+  onAnswer,
+  onExit,
+  onGoToQuestion,
+  onStart,
+  onSubmit,
+  onToggleReview,
+  selectedDomain,
+  timerNow
+}: NavigationProps & {
+  activeSession: TestSession | null;
+  mode: TestModeId;
+  onAnswer: (questionId: string, optionId: string) => void;
+  onExit: () => void;
+  onGoToQuestion: (index: number) => void;
+  onStart: () => void;
+  onSubmit: () => void;
+  onToggleReview: (questionId: string) => void;
+  selectedDomain?: string;
+  timerNow: number;
+}) {
+  const [submitVisible, setSubmitVisible] = useState(false);
+  const config = getTestModeConfig(mode);
+
+  if (!activeSession || activeSession.mode !== mode) {
+    return (
+      <Section eyebrow="Instructions" subtitle={config.description} title={config.routeTitle}>
+        <AppCard style={styles.examCard}>
+          <View style={styles.metricGrid}>
+            <StatCard label="Questions" value={config.questionCount} />
+            <StatCard label="Pass mark" value={formatPercent(PASS_MARK_PERCENT)} />
+            <StatCard label="Timer" value={`${config.durationMinutes}m`} />
+            <StatCard label="Mode" value={config.title} />
+          </View>
+          {mode === 'topic-quiz' ? (
+            <ToastNotification
+              message={`This quiz will use questions from ${selectedDomain ?? 'the selected domain'}.`}
+              title="Topic configured"
+              tone="info"
+            />
+          ) : null}
+          {mode === 'weak-area-practice' ? (
+            <ToastNotification
+              message="If you do not have enough previous attempts, AceCloudCert starts with medium and hard questions."
+              title="Adaptive practice"
+              tone="info"
+            />
+          ) : null}
+          <Text style={styles.copy}>
+            You can move between questions, mark items for review, submit when ready, and resume this attempt later if you
+            leave before finishing.
+          </Text>
+          <View style={styles.actions}>
+            <PrimaryButton onPress={onStart}>Start test</PrimaryButton>
+            <SecondaryButton onPress={onExit}>Back to tests</SecondaryButton>
+          </View>
+        </AppCard>
+      </Section>
+    );
+  }
+
+  const view = getCurrentQuestionView(activeSession);
+  const questions = getSessionQuestions(activeSession);
+  const answeredCount = getAnsweredCount(activeSession);
+  const unansweredCount = getUnansweredCount(activeSession);
+  const markedCount = getMarkedForReviewCount(activeSession);
+  const remainingSeconds = getRemainingSeconds(activeSession, timerNow);
+  const elapsedSeconds = getElapsedSeconds(activeSession, timerNow);
+  const progress = questions.length === 0 ? 0 : Math.round(((activeSession.currentIndex + 1) / questions.length) * 100);
+
+  if (!view) {
+    return (
+      <Section eyebrow="Exam engine" subtitle="No questions are available for this configuration." title={config.routeTitle}>
+        <EmptyState actionLabel="Back to tests" description="Choose another mode or topic." onAction={onExit} title="No questions found" />
+      </Section>
+    );
+  }
+
+  const selectedOptionId = view.answer.selectedOptionId;
+  const isFirstQuestion = activeSession.currentIndex === 0;
+  const isLastQuestion = activeSession.currentIndex === questions.length - 1;
+
   return (
-    <Section eyebrow="Mock exam" subtitle="Layout-only exam route prepared for the test engine implementation." title="AWS CCP mock test">
+    <Section eyebrow={config.title} subtitle="Live attempt with timer, answer state, review flags, and persisted progress." title={config.routeTitle}>
       <AppCard style={styles.examCard}>
         <View style={styles.row}>
-          <Badge tone="info">Question 1 of 65</Badge>
-          <Text style={styles.copy}>Timer placeholder: 89:42</Text>
+          <View style={styles.badgeRow}>
+            <Badge tone="info">
+              Question {activeSession.currentIndex + 1} of {questions.length}
+            </Badge>
+            <Badge tone="neutral">{view.question.domain}</Badge>
+            <Badge tone={view.question.difficulty === 'hard' ? 'danger' : view.question.difficulty === 'medium' ? 'info' : 'success'}>
+              {view.question.difficulty}
+            </Badge>
+          </View>
+          <View style={styles.timerPill}>
+            <Text style={styles.timerText}>{formatDuration(remainingSeconds)}</Text>
+          </View>
         </View>
-        <ProgressBar value={12} />
-        <Text style={styles.cardTitle}>Which AWS benefit helps customers avoid large upfront infrastructure purchases?</Text>
-        {['Elastic capacity', 'Capital expense reduction', 'Pay-as-you-go pricing', 'Dedicated hardware ownership'].map((option) => (
-          <AppCard key={option} style={styles.optionCard}>
-            <Text style={styles.copy}>{option}</Text>
+
+        <ProgressBar value={progress} />
+
+        <View style={styles.metricGrid}>
+          <StatCard label="Answered" value={answeredCount} />
+          <StatCard label="Unanswered" value={unansweredCount} />
+          <StatCard label="Marked" value={markedCount} />
+          <StatCard label="Elapsed" value={formatDuration(elapsedSeconds)} />
+        </View>
+
+        <Text style={styles.questionText}>{view.question.questionText}</Text>
+
+        <View style={styles.optionList}>
+          {view.question.options.map((option) => {
+            const selected = selectedOptionId === option.id;
+
+            return (
+              <Pressable
+                key={option.id}
+                accessibilityRole="button"
+                onPress={() => onAnswer(view.question.id, option.id)}
+                style={[styles.answerOption, selected && styles.selectedAnswerOption]}
+              >
+                <Text style={[styles.optionLetter, selected && styles.selectedOptionText]}>{option.id.toUpperCase()}</Text>
+                <Text style={[styles.optionText, selected && styles.selectedOptionText]}>{option.text}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <View style={styles.actions}>
+          <SecondaryButton disabled={isFirstQuestion} onPress={() => onGoToQuestion(activeSession.currentIndex - 1)}>
+            Previous
+          </SecondaryButton>
+          <SecondaryButton onPress={() => onToggleReview(view.question.id)}>
+            {view.answer.markedForReview ? 'Unmark review' : 'Mark for review'}
+          </SecondaryButton>
+          <PrimaryButton disabled={isLastQuestion} onPress={() => onGoToQuestion(activeSession.currentIndex + 1)}>
+            Next
+          </PrimaryButton>
+          <SecondaryButton onPress={() => setSubmitVisible(true)}>Submit</SecondaryButton>
+        </View>
+
+        <View style={styles.navigator}>
+          {questions.map((question, index) => {
+            const answer = activeSession.answers[question.id];
+            const current = index === activeSession.currentIndex;
+            const answered = Boolean(answer?.selectedOptionId);
+            const marked = Boolean(answer?.markedForReview);
+
+            return (
+              <Pressable
+                key={question.id}
+                accessibilityRole="button"
+                onPress={() => onGoToQuestion(index)}
+                style={[
+                  styles.navigatorItem,
+                  answered && styles.navigatorAnswered,
+                  marked && styles.navigatorMarked,
+                  current && styles.navigatorCurrent
+                ]}
+              >
+                <Text style={[styles.navigatorText, current && styles.navigatorCurrentText]}>{index + 1}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <View style={styles.actions}>
+          <SecondaryButton onPress={onExit}>Exit and resume later</SecondaryButton>
+        </View>
+      </AppCard>
+
+      <Modal onClose={() => setSubmitVisible(false)} title="Submit attempt?" visible={submitVisible}>
+        <Text style={styles.copy}>
+          You have answered {answeredCount} of {questions.length} questions. {unansweredCount} unanswered questions will be scored as incorrect.
+        </Text>
+        <View style={styles.actions}>
+          <SecondaryButton onPress={() => setSubmitVisible(false)}>Keep working</SecondaryButton>
+          <PrimaryButton
+            onPress={() => {
+              setSubmitVisible(false);
+              onSubmit();
+            }}
+          >
+            Submit test
+          </PrimaryButton>
+        </View>
+      </Modal>
+    </Section>
+  );
+}
+
+function TestResultPage({ attempt, navigate, onRetry }: NavigationProps & { attempt: TestAttempt | null; onRetry: () => void }) {
+  if (!attempt) {
+    return (
+      <Section eyebrow="Result" subtitle="Complete a mock exam or quiz to see scoring and analytics." title="Latest test result">
+        <EmptyState actionLabel="Start test" description="No completed attempt is available yet." onAction={() => navigate(APP_ROUTES.tests)} title="No result yet" />
+      </Section>
+    );
+  }
+
+  return (
+    <Section eyebrow="Result" subtitle="Scores are calculated from the submitted answer set and saved locally." title={getAttemptTitle(attempt)}>
+      <View style={styles.metricGrid}>
+        <StatCard label="Score" value={formatPercent(attempt.scorePercent)} />
+        <StatCard label="Correct" value={attempt.correctCount} />
+        <StatCard label="Incorrect" value={attempt.incorrectCount} />
+        <StatCard label="Unanswered" value={attempt.unansweredCount} />
+        <StatCard label="Time taken" value={formatDuration(attempt.timeTakenSeconds)} />
+      </View>
+      <ToastNotification
+        message={`Pass mark is ${formatPercent(attempt.passMark)}. ${attempt.passed ? 'Certificate generation can use this passed attempt.' : 'Review the domain breakdown and retry weak areas.'}`}
+        title={attempt.passed ? 'Passed' : 'Not passed yet'}
+        tone={attempt.passed ? 'success' : 'error'}
+      />
+      <View style={styles.cardGrid}>
+        {attempt.domainBreakdown.map((domain) => (
+          <AppCard key={domain.domain} style={styles.flexCard}>
+            <View style={styles.row}>
+              <Text style={styles.cardTitle}>{domain.domain}</Text>
+              <Badge tone={domain.scorePercent >= attempt.passMark ? 'success' : 'danger'}>{formatPercent(domain.scorePercent)}</Badge>
+            </View>
+            <Text style={styles.copy}>
+              {domain.correct}/{domain.total} correct
+            </Text>
+            <ProgressBar value={domain.scorePercent} />
           </AppCard>
         ))}
-        <View style={styles.actions}>
-          <SecondaryButton onPress={() => navigate(APP_ROUTES.tests)}>Exit test</SecondaryButton>
-          <SecondaryButton onPress={() => navigate(APP_ROUTES.quiz)}>Switch to quiz</SecondaryButton>
-          <PrimaryButton onPress={() => navigate(APP_ROUTES.testResult)}>Submit test</PrimaryButton>
-        </View>
-      </AppCard>
-    </Section>
-  );
-}
-
-function QuizPage({ navigate }: NavigationProps) {
-  return (
-    <Section eyebrow="Topic quiz" subtitle="Short-form quiz layout route for the upcoming topic quiz engine." title="Cloud concepts quiz">
-      <AppCard style={styles.examCard}>
-        <Badge tone="info">Quick quiz</Badge>
-        <Text style={styles.cardTitle}>What does AWS Cloud elasticity allow a workload to do?</Text>
-        <Text style={styles.copy}>Select an answer, move through the quiz, and land on the same result route used by mocks.</Text>
-        <View style={styles.actions}>
-          <SecondaryButton onPress={() => navigate(APP_ROUTES.tests)}>Back to tests</SecondaryButton>
-          <PrimaryButton onPress={() => navigate(APP_ROUTES.testResult)}>Finish quiz</PrimaryButton>
-        </View>
-      </AppCard>
-    </Section>
-  );
-}
-
-function TestResultPage({ navigate }: NavigationProps) {
-  return (
-    <Section eyebrow="Result" subtitle="Result route for scores, pass state, domain breakdown, review, and certificate access." title="Latest test result">
-      <View style={styles.metricGrid}>
-        <StatCard label="Score" value="82%" />
-        <StatCard label="Correct" value="53" />
-        <StatCard label="Incorrect" value="12" />
-        <StatCard label="Time taken" value="71m" />
       </View>
-      <ToastNotification message="This learner passed the mock route and can open the certificate detail layout." title="Passed" tone="success" />
       <View style={styles.actions}>
         <PrimaryButton onPress={() => navigate(APP_ROUTES.testReview)}>Review answers</PrimaryButton>
-        <SecondaryButton onPress={() => navigate(APP_ROUTES.certificateDetail)}>Open certificate</SecondaryButton>
-        <SecondaryButton onPress={() => navigate(APP_ROUTES.mockTest)}>Retry test</SecondaryButton>
+        {attempt.passed ? <SecondaryButton onPress={() => navigate(APP_ROUTES.certificateDetail)}>Open certificate</SecondaryButton> : null}
+        <SecondaryButton onPress={onRetry}>Retry mode</SecondaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.tests)}>All tests</SecondaryButton>
       </View>
     </Section>
   );
 }
 
-function TestReviewPage({ navigate }: NavigationProps) {
+function TestReviewPage({ attempt, navigate }: NavigationProps & { attempt: TestAttempt | null }) {
+  if (!attempt) {
+    return (
+      <Section eyebrow="Review" subtitle="Submit a test to review answers and explanations." title="Answer review">
+        <EmptyState actionLabel="Back to tests" description="No completed attempt is available for review." onAction={() => navigate(APP_ROUTES.tests)} title="No review yet" />
+      </Section>
+    );
+  }
+
+  const questions = attempt.questionIds
+    .map((questionId) => questionBank.find((question) => question.id === questionId))
+    .filter((question): question is (typeof questionBank)[number] => Boolean(question));
+
   return (
-    <Section eyebrow="Review" subtitle="Review route for answer explanations after a completed attempt." title="Answer review">
+    <Section eyebrow="Review" subtitle="Review selected answers, correct answers, references, and explanations." title="Answer review">
       <View style={styles.cardGrid}>
-        {questionBank.slice(0, 4).map((question, index) => (
-          <AppCard key={question.id} style={styles.flexCard}>
-            <Badge tone={index % 2 === 0 ? 'success' : 'danger'}>{index % 2 === 0 ? 'Correct' : 'Review'}</Badge>
-            <Text style={styles.cardTitle}>{question.questionText}</Text>
-            <Text style={styles.copy}>{question.explanation}</Text>
-          </AppCard>
-        ))}
+        {questions.map((question, index) => {
+          const answer = attempt.answers[question.id];
+          const selectedOption = question.options.find((option) => option.id === answer?.selectedOptionId);
+          const correctOption = question.options.find((option) => option.id === question.correctOptionId);
+          const correct = answer?.selectedOptionId === question.correctOptionId;
+
+          return (
+            <AppCard key={question.id} style={styles.flexCard}>
+              <View style={styles.row}>
+                <Badge tone={correct ? 'success' : answer?.selectedOptionId ? 'danger' : 'neutral'}>
+                  {correct ? 'Correct' : answer?.selectedOptionId ? 'Incorrect' : 'Unanswered'}
+                </Badge>
+                <Text style={styles.dateText}>Question {index + 1}</Text>
+              </View>
+              <Text style={styles.cardTitle}>{question.questionText}</Text>
+              <Text style={styles.copy}>Your answer: {selectedOption?.text ?? 'No answer selected'}</Text>
+              <Text style={styles.copy}>Correct answer: {correctOption?.text ?? 'Unavailable'}</Text>
+              <Text style={styles.copy}>{question.explanation}</Text>
+              <Text style={styles.referenceText}>Reference: {question.reference}</Text>
+            </AppCard>
+          );
+        })}
       </View>
       <View style={styles.actions}>
         <PrimaryButton onPress={() => navigate(APP_ROUTES.testResult)}>Back to result</PrimaryButton>
@@ -878,6 +1411,22 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     lineHeight: 22
   },
+  answerOption: {
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radii.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+    padding: theme.spacing.md
+  },
+  badgeRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.xs
+  },
   certificateBrand: {
     color: theme.colors.primary,
     fontSize: 18,
@@ -900,6 +1449,12 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontSize: 14,
     lineHeight: 21
+  },
+  dateText: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase'
   },
   examCard: {
     gap: theme.spacing.md
@@ -936,10 +1491,76 @@ const styles = StyleSheet.create({
   optionCard: {
     backgroundColor: theme.colors.surface
   },
+  navigator: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.xs
+  },
+  navigatorAnswered: {
+    backgroundColor: 'rgba(34, 197, 94, 0.18)',
+    borderColor: theme.colors.success
+  },
+  navigatorCurrent: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary
+  },
+  navigatorCurrentText: {
+    color: theme.colors.background
+  },
+  navigatorItem: {
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radii.sm,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: 'center',
+    width: 34
+  },
+  navigatorMarked: {
+    borderColor: theme.colors.primary,
+    borderWidth: 2
+  },
+  navigatorText: {
+    color: theme.colors.text,
+    fontSize: 12,
+    fontWeight: '900'
+  },
+  optionLetter: {
+    color: theme.colors.primary,
+    fontSize: 13,
+    fontWeight: '900',
+    width: 18
+  },
+  optionList: {
+    gap: theme.spacing.sm
+  },
+  optionText: {
+    color: theme.colors.text,
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 21
+  },
   price: {
     color: theme.colors.primary,
     fontSize: 22,
     fontWeight: '900'
+  },
+  questionText: {
+    color: theme.colors.text,
+    fontSize: 20,
+    fontWeight: '900',
+    lineHeight: 28
+  },
+  referenceText: {
+    color: theme.colors.accentBlue,
+    fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 19
+  },
+  resumeCard: {
+    borderColor: theme.colors.primary
   },
   routeHeading: {
     gap: theme.spacing.sm
@@ -954,6 +1575,18 @@ const styles = StyleSheet.create({
   section: {
     gap: theme.spacing.md
   },
+  selectedAnswerOption: {
+    backgroundColor: 'rgba(255, 140, 0, 0.16)',
+    borderColor: theme.colors.primary
+  },
+  selectedOptionText: {
+    color: theme.colors.text
+  },
+  stack: {
+    flex: 1,
+    gap: theme.spacing.xs,
+    minWidth: 240
+  },
   tableMuted: {
     color: theme.colors.textMuted,
     fontSize: 13,
@@ -964,5 +1597,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
     lineHeight: 19
+  },
+  timerPill: {
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radii.md,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8
+  },
+  timerText: {
+    color: theme.colors.primary,
+    fontSize: 16,
+    fontWeight: '900'
   }
 });

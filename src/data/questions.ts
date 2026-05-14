@@ -937,5 +937,76 @@ export const questionBank: readonly Question[] = [
     reference: 'AWS Support Plans - Enterprise Support',
     tags: ['concierge', 'enterprise support', 'billing guidance'],
     isPremium: true
+  }),
+
+  q({
+    id: 'aws-ccp-cloud-concepts-007',
+    domain: 'Cloud concepts',
+    subDomain: 'Reliability concepts',
+    difficulty: 'medium',
+    questionText: 'Which design approach helps reduce the impact of a single component failure in a cloud workload?',
+    options: ['Design for failure', 'Use one large server', 'Disable monitoring alerts', 'Store all backups on the same instance'],
+    correctOptionId: 'a',
+    explanation:
+      'Designing for failure means expecting components to fail and building systems with redundancy, automation, and recovery paths.',
+    reference: 'AWS Well-Architected Framework - Reliability Pillar',
+    tags: ['reliability', 'design for failure', 'architecture'],
+    isPremium: true
+  }),
+  q({
+    id: 'aws-ccp-security-compliance-007',
+    domain: 'Security and compliance',
+    subDomain: 'Audit logging',
+    difficulty: 'medium',
+    questionText: 'Which AWS service records API activity and account events for auditing and governance?',
+    options: ['AWS CloudTrail', 'Amazon CloudWatch Metrics only', 'AWS Budgets', 'Amazon Route 53'],
+    correctOptionId: 'a',
+    explanation:
+      'AWS CloudTrail records AWS API calls and account activity, helping teams audit changes, investigate events, and support governance requirements.',
+    reference: 'AWS CloudTrail User Guide',
+    tags: ['cloudtrail', 'audit', 'governance'],
+    isPremium: false
+  }),
+  q({
+    id: 'aws-ccp-technology-007',
+    domain: 'Technology',
+    subDomain: 'Event-driven architecture',
+    difficulty: 'hard',
+    questionText: 'Which AWS service can route events from AWS services, SaaS applications, and custom applications to targets for event-driven workflows?',
+    options: ['Amazon EventBridge', 'Amazon EBS', 'AWS Artifact', 'AWS Pricing Calculator'],
+    correctOptionId: 'a',
+    explanation:
+      'Amazon EventBridge is a serverless event bus service that routes events from many sources to targets such as Lambda functions, Step Functions, and queues.',
+    reference: 'Amazon EventBridge User Guide',
+    tags: ['eventbridge', 'events', 'serverless'],
+    isPremium: true
+  }),
+  q({
+    id: 'aws-ccp-billing-pricing-007',
+    domain: 'Billing and pricing',
+    subDomain: 'Cost allocation',
+    difficulty: 'medium',
+    questionText: 'Which practice helps allocate AWS costs to teams, projects, or environments?',
+    options: ['Apply cost allocation tags', 'Disable consolidated billing', 'Use one root user for all work', 'Remove all budgets'],
+    correctOptionId: 'a',
+    explanation:
+      'Cost allocation tags help categorize AWS costs by dimensions such as project, owner, department, or environment.',
+    reference: 'AWS Billing and Cost Management - Cost allocation tags',
+    tags: ['cost allocation', 'tags', 'billing'],
+    isPremium: true
+  }),
+  q({
+    id: 'aws-ccp-global-infrastructure-007',
+    domain: 'Global infrastructure',
+    subDomain: 'Content delivery',
+    difficulty: 'medium',
+    questionText: 'Which AWS service uses the global edge network to deliver cached content with low latency?',
+    options: ['Amazon CloudFront', 'Amazon RDS', 'AWS IAM Identity Center', 'Amazon EBS'],
+    correctOptionId: 'a',
+    explanation:
+      'Amazon CloudFront is a content delivery network that uses AWS edge locations to cache and deliver content closer to users.',
+    reference: 'Amazon CloudFront Developer Guide',
+    tags: ['cloudfront', 'cdn', 'edge network'],
+    isPremium: false
   })
 ];

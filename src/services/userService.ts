@@ -3,6 +3,7 @@ import { certifications } from '@/data';
 import type { AuthUser } from '@/features/auth';
 import type {
   AccountSettings,
+  LearningHistoryItem,
   UpdateAccountSettingsInput,
   UpdateUserProfileInput,
   UserAccountProfile
@@ -101,6 +102,20 @@ function mergeAuthFields(profile: UserAccountProfile, user: AuthUser): UserAccou
 }
 
 export const userService: UserService = {
+  async addLearningHistoryItem(userId: string, item: LearningHistoryItem) {
+    const store = await loadStore();
+    const profile = store.profiles.find((storedProfile) => storedProfile.userId === userId);
+
+    if (!profile) {
+      throw new Error('Profile was not found for this user.');
+    }
+
+    return userService.saveProfile({
+      ...profile,
+      learningHistory: [item, ...profile.learningHistory.filter((historyItem) => historyItem.id !== item.id)].slice(0, 50)
+    });
+  },
+
   async getProfile(user: AuthUser) {
     const store = await loadStore();
     const storedProfile = store.profiles.find((profile) => profile.userId === user.id);
