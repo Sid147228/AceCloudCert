@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import { Image, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import logo from '../../assets/icon.png';
 import { AppCard, StatCard } from '@/components/cards';
 import { DomainProgressList } from '@/components/charts';
 import { InputField, SelectField } from '@/components/forms';
@@ -16,6 +19,13 @@ import { EmailVerificationNotice, ForgotPasswordForm, LoginForm, SignupForm } fr
 import type { AuthUser } from '@/features/auth';
 import { CertificationCatalogue, CertificationDetail } from '@/features/certifications/components';
 import type { CertificationFilters } from '@/features/certifications';
+import {
+  createCertificateRecord,
+  createLinkedInShareUrl,
+  formatCertificateDate,
+  getCertificateShareText,
+  renderCertificateHtml
+} from '@/features/certificates';
 import { buildDashboardOverview } from '@/features/dashboard';
 import { filterKnowledgeTopics, getKnowledgeCategories, getRelatedQuestions } from '@/features/knowledge-base';
 import type { KnowledgeTopicFilters } from '@/features/knowledge-base';
@@ -41,7 +51,6 @@ import {
 import type { ScoreTrendPoint, TestAnalytics, TestAttempt, TestModeId, TestSession } from '@/features/tests';
 import {
   AccountSettingsPanel,
-  CertificateHistoryPanel,
   ChangePasswordForm,
   EditProfileForm,
   LearningHistoryPanel,
@@ -51,8 +60,15 @@ import {
 import type { UserAccountProfile } from '@/features/profile';
 import { ROUTE_LABELS, ROUTE_META, getBreadcrumbs, getNavigationRoute, isProtectedRoute } from '@/app/navigation';
 import { useAppNavigation } from '@/hooks';
-import { analyticsService, serviceReadiness, testService } from '@/services';
-import type { AppRoute, Certification, KnowledgeTopic, LegalPage, ServiceReadinessItem, UserProfile } from '@/types';
+import { analyticsService, certificateService, serviceReadiness, testService } from '@/services';
+import type {
+  AppRoute,
+  CertificateRecord,
+  Certification,
+  KnowledgeTopic,
+  LegalPage,
+  ServiceReadinessItem
+} from '@/types';
 import { countQuestionsByDomain, formatCount, formatPercent } from '@/utils';
 
 const authEntryRoutes = new Set<AppRoute>([APP_ROUTES.login, APP_ROUTES.signup, APP_ROUTES.forgotPassword]);
@@ -91,7 +107,7 @@ export default function AceCloudCertApp() {
 function AceCloudCertRoutes() {
   const { activeRoute, navigate: setActiveRoute } = useAppNavigation(APP_ROUTES.landing);
   const { isAuthenticated, isInitializing, logout, status, user } = useAuth();
-  const { addLearningHistoryItem, isProfileLoading, profile } = useUserProfile();
+  const { addCertificateHistoryItem, addLearningHistoryItem, isProfileLoading, profile } = useUserProfile();
   const [redirectAfterLogin, setRedirectAfterLogin] = useState<AppRoute>(APP_ROUTES.dashboard);
   const [activeTestTab, setActiveTestTab] = useState('overview');
   const [certificationFilters, setCertificationFilters] = useState<CertificationFilters>({
@@ -110,6 +126,9 @@ function AceCloudCertRoutes() {
   const [activeTestSession, setActiveTestSession] = useState<TestSession | null>(null);
   const [testAnalytics, setTestAnalytics] = useState<TestAnalytics>(EMPTY_TEST_ANALYTICS);
   const [testAttempts, setTestAttempts] = useState<readonly TestAttempt[]>([]);
+  const [certificateRecords, setCertificateRecords] = useState<readonly CertificateRecord[]>([]);
+  const [selectedCertificateId, setSelectedCertificateId] = useState<string | null>(null);
+  const [certificateNotice, setCertificateNotice] = useState<string | null>(null);
   const [latestAttempt, setLatestAttempt] = useState<TestAttempt | null>(null);
   const [timerTick, setTimerTick] = useState(Date.now());
 
@@ -118,8 +137,9 @@ function AceCloudCertRoutes() {
     certifications.find((certification) => certification.id === selectedCertificationId) ?? certifications[0];
   const selectedKnowledgeTopic =
     knowledgeTopics.find((topic) => topic.id === selectedKnowledgeTopicId) ?? knowledgeTopics[0];
+  const selectedCertificate =
+    certificateRecords.find((certificate) => certificate.id === selectedCertificateId) ?? certificateRecords[0];
   const selectedTestModeConfig = getTestModeConfig(selectedTestMode);
-  const userProfile = profile ? toUserProfile(profile) : null;
   const activeMenuRoute =
     isAuthenticated && !isProtectedRoute(activeRoute) ? getAuthenticatedPublicMenuRoute(activeRoute) : getNavigationRoute(activeRoute);
 
@@ -129,6 +149,8 @@ function AceCloudCertRoutes() {
       setLatestAttempt(null);
       setTestAnalytics(EMPTY_TEST_ANALYTICS);
       setTestAttempts([]);
+      setCertificateRecords([]);
+      setSelectedCertificateId(null);
       return;
     }
 
@@ -136,10 +158,11 @@ function AceCloudCertRoutes() {
     const currentUserId = user.id;
 
     async function loadTestState() {
-      const [storedSession, storedAttempts, storedAnalytics] = await Promise.all([
+      const [storedSession, storedAttempts, storedAnalytics, storedCertificates] = await Promise.all([
         testService.getActiveSession(currentUserId),
         testService.listAttempts(currentUserId),
-        analyticsService.getTestAnalytics(currentUserId)
+        analyticsService.getTestAnalytics(currentUserId),
+        certificateService.listCertificates(currentUserId)
       ]);
 
       if (!active) {
@@ -149,7 +172,9 @@ function AceCloudCertRoutes() {
       setActiveTestSession(storedSession);
       setTestAnalytics(storedAnalytics);
       setTestAttempts(storedAttempts);
+      setCertificateRecords(storedCertificates);
       setLatestAttempt(storedAttempts[0] ?? null);
+      setSelectedCertificateId(storedCertificates[0]?.id ?? null);
 
       if (storedSession) {
         setSelectedTestMode(storedSession.mode);
@@ -340,7 +365,115 @@ function AceCloudCertRoutes() {
       });
     }
 
+    if (storedAttempt.passed) {
+      await generateCertificateForAttempt(storedAttempt);
+    }
+
     navigate(APP_ROUTES.testResult);
+  }
+
+  async function generateCertificateForAttempt(attempt: TestAttempt) {
+    if (!attempt.passed) {
+      return null;
+    }
+
+    const existingCertificate = await certificateService.getCertificateForAttempt(attempt.userId, attempt.id);
+
+    if (existingCertificate) {
+      setSelectedCertificateId(existingCertificate.id);
+      return existingCertificate;
+    }
+
+    const certificate = createCertificateRecord({
+      attempt,
+      userName: profile?.fullName ?? user?.fullName ?? 'AceCloudCert Learner'
+    });
+    const storedCertificate = await certificateService.saveCertificate(certificate);
+    const storedCertificates = await certificateService.listCertificates(attempt.userId);
+
+    setCertificateRecords(storedCertificates);
+    setSelectedCertificateId(storedCertificate.id);
+
+    if (profile) {
+      await addCertificateHistoryItem({
+        certificateId: storedCertificate.certificateId,
+        certificationId: storedCertificate.certificationId,
+        certificationName: storedCertificate.certificationName,
+        id: storedCertificate.id,
+        issuedAt: storedCertificate.issuedAt,
+        score: storedCertificate.score
+      });
+    }
+
+    return storedCertificate;
+  }
+
+  async function openCertificateForAttempt(attempt: TestAttempt) {
+    const certificate = await generateCertificateForAttempt(attempt);
+
+    if (certificate) {
+      navigate(APP_ROUTES.certificateDetail);
+      return;
+    }
+
+    navigate(APP_ROUTES.certificates);
+  }
+
+  function openCertificate(certificate: CertificateRecord) {
+    setSelectedCertificateId(certificate.id);
+    setCertificateNotice(null);
+    navigate(APP_ROUTES.certificateDetail);
+  }
+
+  async function exportCertificate(certificate: CertificateRecord) {
+    const html = renderCertificateHtml(certificate);
+
+    try {
+      const file = await Print.printToFileAsync({ html });
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(file.uri, {
+          dialogTitle: `${APP_NAME} certificate ${certificate.certificateId}`
+        });
+        setCertificateNotice('Certificate export is ready to share or save.');
+        return;
+      }
+    } catch {
+      // Browser fallback below handles environments where native PDF export is unavailable.
+    }
+
+    const browserWindow = getBrowserWindow();
+
+    if (browserWindow?.open) {
+      browserWindow.open(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`, '_blank');
+      setCertificateNotice('Certificate opened in a new tab for printing or saving.');
+      return;
+    }
+
+    setCertificateNotice('Certificate export is not available in this runtime.');
+  }
+
+  async function shareCertificate(certificate: CertificateRecord) {
+    const message = getCertificateShareText();
+
+    try {
+      await Share.share({
+        message,
+        title: `${APP_NAME} certificate`
+      });
+      setCertificateNotice('Share text is ready.');
+      return;
+    } catch {
+      const browserWindow = getBrowserWindow();
+      browserWindow?.open?.(createLinkedInShareUrl(certificate), '_blank');
+      setCertificateNotice('LinkedIn sharing opened with the certificate verification link.');
+    }
+  }
+
+  function openLinkedInShare(certificate: CertificateRecord) {
+    const browserWindow = getBrowserWindow();
+    browserWindow?.open?.(createLinkedInShareUrl(certificate), '_blank');
+    setCertificateNotice('LinkedIn sharing opened with the certificate verification link.');
   }
 
   function showProtectedFallback() {
@@ -497,7 +630,9 @@ function AceCloudCertRoutes() {
         <TestResultPage
           analytics={testAnalytics}
           attempt={latestAttempt}
+          certificate={latestAttempt ? certificateRecords.find((certificate) => certificate.sourceAttemptId === latestAttempt.id) : undefined}
           navigate={navigate}
+          onOpenCertificate={openCertificateForAttempt}
           onRetry={() => openTestMode(latestAttempt?.mode ?? 'full-mock')}
         />
       ) : activeRoute === APP_ROUTES.testReview ? (
@@ -517,9 +652,29 @@ function AceCloudCertRoutes() {
           topic={selectedKnowledgeTopic}
         />
       ) : activeRoute === APP_ROUTES.certificates ? (
-        profile ? <CertificatesPage navigate={navigate} profile={profile} /> : showProtectedFallback()
+        profile ? (
+          <CertificatesPage
+            certificates={certificateRecords}
+            navigate={navigate}
+            onOpenCertificate={openCertificate}
+            profile={profile}
+          />
+        ) : (
+          showProtectedFallback()
+        )
       ) : activeRoute === APP_ROUTES.certificateDetail ? (
-        userProfile ? <CertificateDetailPage navigate={navigate} user={userProfile} /> : showProtectedFallback()
+        profile ? (
+          <CertificateDetailPage
+            certificate={selectedCertificate}
+            notice={certificateNotice}
+            navigate={navigate}
+            onExport={exportCertificate}
+            onLinkedInShare={openLinkedInShare}
+            onShare={shareCertificate}
+          />
+        ) : (
+          showProtectedFallback()
+        )
       ) : activeRoute === APP_ROUTES.profile ? (
         profile ? <ProfilePage navigate={navigate} onLogout={handleLogout} profile={profile} /> : showProtectedFallback()
       ) : activeRoute === APP_ROUTES.editProfile ? (
@@ -531,7 +686,16 @@ function AceCloudCertRoutes() {
       ) : activeRoute === APP_ROUTES.learningHistory ? (
         profile ? <LearningHistoryPage navigate={navigate} profile={profile} /> : showProtectedFallback()
       ) : activeRoute === APP_ROUTES.certificateHistory ? (
-        profile ? <CertificateHistoryPage navigate={navigate} profile={profile} /> : showProtectedFallback()
+        profile ? (
+          <CertificateHistoryPage
+            certificates={certificateRecords}
+            navigate={navigate}
+            onOpenCertificate={openCertificate}
+            profile={profile}
+          />
+        ) : (
+          showProtectedFallback()
+        )
       ) : activeRoute === APP_ROUTES.subscription ? (
         profile ? <SubscriptionPage navigate={navigate} profile={profile} /> : showProtectedFallback()
       ) : (
@@ -582,15 +746,6 @@ function getAuthenticatedPublicMenuRoute(route: AppRoute) {
   return APP_ROUTES.dashboard;
 }
 
-function toUserProfile(profile: UserAccountProfile): UserProfile {
-  return {
-    email: profile.email,
-    id: profile.userId,
-    name: profile.fullName,
-    plan: profile.plan
-  };
-}
-
 function getAttemptTitle(attempt: TestAttempt) {
   if (attempt.mode === 'topic-quiz' && attempt.domain) {
     return `${attempt.domain} topic quiz`;
@@ -614,6 +769,16 @@ function formatDateTime(value: string) {
     minute: '2-digit',
     month: 'short'
   }).format(new Date(value));
+}
+
+function getBrowserWindow() {
+  const runtime = globalThis as typeof globalThis & {
+    window?: {
+      open?: (url?: string, target?: string) => unknown;
+    };
+  };
+
+  return runtime.window;
 }
 
 function LandingPage({ isAuthenticated, navigate }: NavigationProps & { isAuthenticated: boolean }) {
@@ -1487,11 +1652,15 @@ function TestSessionPage({
 function TestResultPage({
   analytics,
   attempt,
+  certificate,
   navigate,
+  onOpenCertificate,
   onRetry
 }: NavigationProps & {
   analytics: TestAnalytics;
   attempt: TestAttempt | null;
+  certificate?: CertificateRecord;
+  onOpenCertificate: (attempt: TestAttempt) => void;
   onRetry: () => void;
 }) {
   if (!attempt) {
@@ -1571,7 +1740,11 @@ function TestResultPage({
       </Section>
       <View style={styles.actions}>
         <PrimaryButton onPress={() => navigate(APP_ROUTES.testReview)}>Review answers</PrimaryButton>
-        {attempt.passed ? <SecondaryButton onPress={() => navigate(APP_ROUTES.certificateDetail)}>Open certificate</SecondaryButton> : null}
+        {attempt.passed ? (
+          <SecondaryButton onPress={() => void onOpenCertificate(attempt)}>
+            {certificate ? 'Open certificate' : 'Generate certificate'}
+          </SecondaryButton>
+        ) : null}
         <SecondaryButton onPress={onRetry}>Retry mode</SecondaryButton>
         <SecondaryButton onPress={() => navigate(APP_ROUTES.tests)}>All tests</SecondaryButton>
       </View>
@@ -1779,46 +1952,178 @@ function KnowledgeTopicDetailPage({
   );
 }
 
-function CertificatesPage({ navigate, profile }: NavigationProps & { profile: UserAccountProfile }) {
-  if (profile.certificateHistory.length > 0) {
-    return (
-      <Section eyebrow="Achievements" subtitle="Certificate records connected to your account profile." title="Certificates">
-        <CertificateHistoryPanel onBack={() => navigate(APP_ROUTES.profile)} profile={profile} />
-        <View style={styles.actions}>
-          <PrimaryButton onPress={() => navigate(APP_ROUTES.certificateDetail)}>Open certificate detail</PrimaryButton>
-          <SecondaryButton onPress={() => navigate(APP_ROUTES.profile)}>Back to profile</SecondaryButton>
-        </View>
-      </Section>
-    );
-  }
-
+function CertificatesPage({
+  certificates,
+  navigate,
+  onOpenCertificate
+}: NavigationProps & {
+  certificates: readonly CertificateRecord[];
+  onOpenCertificate: (certificate: CertificateRecord) => void;
+  profile: UserAccountProfile;
+}) {
   return (
-    <Section eyebrow="Achievements" subtitle="Certificate list route with history and detail routing." title="Certificates">
-      <EmptyState
-        actionLabel="Open sample certificate"
-        description="Certificate generation logic comes later, but the list and detail routes are already connected."
-        onAction={() => navigate(APP_ROUTES.certificateDetail)}
-        title="No generated certificates yet"
+    <Section
+      eyebrow="Achievements"
+      subtitle="Certificates are generated only after a passed mock exam or quiz and are saved locally to the learner account."
+      title="Certificates"
+    >
+      <CertificateList
+        certificates={certificates}
+        emptyActionLabel="Start mock exam"
+        emptyDescription="Pass a test with at least the required score to generate your first AceCloudCert certificate."
+        emptyTitle="No generated certificates yet"
+        onEmptyAction={() => navigate(APP_ROUTES.mockTest)}
+        onOpenCertificate={onOpenCertificate}
       />
     </Section>
   );
 }
 
-function CertificateDetailPage({ navigate, user }: NavigationProps & { user: UserProfile }) {
+function CertificateDetailPage({
+  certificate,
+  navigate,
+  notice,
+  onExport,
+  onLinkedInShare,
+  onShare
+}: NavigationProps & {
+  certificate?: CertificateRecord;
+  notice: string | null;
+  onExport: (certificate: CertificateRecord) => void;
+  onLinkedInShare: (certificate: CertificateRecord) => void;
+  onShare: (certificate: CertificateRecord) => void;
+}) {
+  if (!certificate) {
+    return (
+      <Section eyebrow="Certificate" subtitle="Pass a test to generate a certificate preview." title="Certificate preview">
+        <EmptyState
+          actionLabel="Start mock exam"
+          description="No earned certificate is selected yet. Certificates are created only from passed test attempts."
+          onAction={() => navigate(APP_ROUTES.mockTest)}
+          title="No certificate available"
+        />
+      </Section>
+    );
+  }
+
   return (
-    <Section eyebrow="Certificate" subtitle="Certificate detail route prepared for export and sharing integrations." title="Certificate preview">
-      <AppCard style={styles.certificatePreview}>
-        <Text style={styles.certificateBrand}>{APP_NAME}</Text>
-        <Text style={styles.certificateTitle}>Certificate of Completion</Text>
-        <Text style={styles.copy}>Awarded to {user.name}</Text>
-        <Text style={styles.cardTitle}>AWS Certified Cloud Practitioner Practice Exam</Text>
-        <Text style={styles.copy}>Score: 82% | Certificate ID: ACC-AWS-CCP-SAMPLE</Text>
-      </AppCard>
+    <Section eyebrow="Certificate" subtitle="Preview, export, and share your earned AceCloudCert achievement." title="Certificate preview">
+      {notice ? <ToastNotification message={notice} title="Certificate action" tone="info" /> : null}
+      <CertificatePreview certificate={certificate} />
+      <View style={styles.cardGrid}>
+        <AppCard style={styles.flexCard}>
+          <Text style={styles.cardTitle}>Verification</Text>
+          <Text style={styles.copy}>
+            This certificate verifies a practice achievement on AceCloudCert. It is not an official vendor credential.
+          </Text>
+          <Text style={styles.referenceText}>{certificate.verificationUrl}</Text>
+        </AppCard>
+        <AppCard style={styles.flexCard}>
+          <Text style={styles.cardTitle}>LinkedIn share text</Text>
+          <Text style={styles.copy}>{getCertificateShareText()}</Text>
+        </AppCard>
+      </View>
       <View style={styles.actions}>
-        <PrimaryButton onPress={() => navigate(APP_ROUTES.certificates)}>Back to certificates</PrimaryButton>
-        <SecondaryButton onPress={() => navigate(APP_ROUTES.testResult)}>View source result</SecondaryButton>
+        <PrimaryButton onPress={() => void onExport(certificate)}>Download / export</PrimaryButton>
+        <SecondaryButton onPress={() => void onShare(certificate)}>Share text</SecondaryButton>
+        <SecondaryButton onPress={() => onLinkedInShare(certificate)}>Open LinkedIn share</SecondaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.certificates)}>Back to certificates</SecondaryButton>
       </View>
     </Section>
+  );
+}
+
+function CertificateList({
+  certificates,
+  emptyActionLabel,
+  emptyDescription,
+  emptyTitle,
+  onEmptyAction,
+  onOpenCertificate
+}: {
+  certificates: readonly CertificateRecord[];
+  emptyActionLabel: string;
+  emptyDescription: string;
+  emptyTitle: string;
+  onEmptyAction: () => void;
+  onOpenCertificate: (certificate: CertificateRecord) => void;
+}) {
+  if (certificates.length === 0) {
+    return (
+      <EmptyState
+        actionLabel={emptyActionLabel}
+        description={emptyDescription}
+        onAction={onEmptyAction}
+        title={emptyTitle}
+      />
+    );
+  }
+
+  const highestScore = Math.max(...certificates.map((certificate) => certificate.score));
+
+  return (
+    <View style={styles.verticalStack}>
+      <View style={styles.metricGrid}>
+        <StatCard label="Certificates earned" value={certificates.length} />
+        <StatCard label="Highest score" value={formatPercent(highestScore)} />
+        <StatCard label="Latest issue date" value={formatCertificateDate(certificates[0]?.issuedAt ?? new Date().toISOString())} />
+      </View>
+      <View style={styles.cardGrid}>
+        {certificates.map((certificate) => (
+          <AppCard key={certificate.id} style={styles.flexCard}>
+            <View style={styles.row}>
+              <Badge tone="success">Earned</Badge>
+              <Text style={styles.dateText}>{formatCertificateDate(certificate.issuedAt)}</Text>
+            </View>
+            <Text style={styles.cardTitle}>{certificate.certificationName}</Text>
+            <Text style={styles.copyStrong}>{certificate.userName}</Text>
+            <Text style={styles.copy}>Score: {formatPercent(certificate.score)}</Text>
+            <Text style={styles.copy}>Certificate ID: {certificate.certificateId}</Text>
+            <PrimaryButton onPress={() => onOpenCertificate(certificate)} size="sm">
+              View certificate
+            </PrimaryButton>
+          </AppCard>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function CertificatePreview({ certificate }: { certificate: CertificateRecord }) {
+  return (
+    <AppCard style={styles.certificatePreview}>
+      <View style={styles.certificateBorder}>
+        <View style={styles.certificateHeader}>
+          <View style={styles.certificateLogoWrap}>
+            <Image source={logo} style={styles.certificateLogo} />
+            <Text style={styles.certificateBrand}>{APP_NAME}</Text>
+          </View>
+          <View style={styles.excellenceSeal}>
+            <Text style={styles.sealStrong}>ACE</Text>
+            <Text style={styles.sealText}>Excellence</Text>
+            <Text style={styles.sealText}>Verified</Text>
+          </View>
+        </View>
+        <Text style={styles.certificateEyebrow}>Certificate of Achievement</Text>
+        <Text style={styles.certificateTitle}>Cloud Excellence</Text>
+        <Text style={styles.certificateMuted}>This certificate is proudly awarded to</Text>
+        <Text style={styles.certificateCandidate}>{certificate.userName}</Text>
+        <Text style={styles.certificateMuted}>for successfully completing the AceCloudCert assessment for</Text>
+        <Text style={styles.certificateProgram}>{certificate.certificationName}</Text>
+        <Text style={styles.certificateScore}>Score: {formatPercent(certificate.score)}</Text>
+        <View style={styles.certificateMetaGrid}>
+          <View style={styles.certificateMetaItem}>
+            <Text style={styles.certificateMetaLabel}>Issue date</Text>
+            <Text style={styles.certificateMetaValue}>{formatCertificateDate(certificate.issuedAt)}</Text>
+          </View>
+          <View style={styles.certificateMetaItem}>
+            <Text style={styles.certificateMetaLabel}>Certificate ID</Text>
+            <Text style={styles.certificateMetaValue}>{certificate.certificateId}</Text>
+          </View>
+        </View>
+        <Text style={styles.certificateVerification}>Verify this achievement at {certificate.verificationUrl}</Text>
+      </View>
+    </AppCard>
   );
 }
 
@@ -1878,10 +2183,25 @@ function LearningHistoryPage({ navigate, profile }: NavigationProps & { profile:
   );
 }
 
-function CertificateHistoryPage({ navigate, profile }: NavigationProps & { profile: UserAccountProfile }) {
+function CertificateHistoryPage({
+  certificates,
+  navigate,
+  onOpenCertificate
+}: NavigationProps & {
+  certificates: readonly CertificateRecord[];
+  onOpenCertificate: (certificate: CertificateRecord) => void;
+  profile: UserAccountProfile;
+}) {
   return (
     <Section eyebrow="Achievements" subtitle="Earned certificate records and verification ids." title="Certificate history">
-      <CertificateHistoryPanel onBack={() => navigate(APP_ROUTES.profile)} profile={profile} />
+      <CertificateList
+        certificates={certificates}
+        emptyActionLabel="Back to profile"
+        emptyDescription="Earned certificates will appear here after a passed test attempt."
+        emptyTitle="No certificate records yet"
+        onEmptyAction={() => navigate(APP_ROUTES.profile)}
+        onOpenCertificate={onOpenCertificate}
+      />
     </Section>
   );
 }
@@ -2010,21 +2330,124 @@ const styles = StyleSheet.create({
     gap: theme.spacing.xs
   },
   certificateBrand: {
-    color: theme.colors.primary,
-    fontSize: 18,
+    color: '#0F172A',
+    fontSize: 20,
     fontWeight: '900',
     textAlign: 'center'
   },
-  certificatePreview: {
+  certificateBorder: {
     alignItems: 'center',
-    borderColor: theme.colors.primary,
+    backgroundColor: '#F8FAFC',
+    borderColor: '#047857',
+    borderRadius: theme.radii.md,
+    borderWidth: 8,
     gap: theme.spacing.md,
-    padding: theme.spacing.xl
+    padding: theme.spacing.xl,
+    width: '100%'
+  },
+  certificateCandidate: {
+    borderBottomColor: '#047857',
+    borderBottomWidth: 2,
+    color: '#111827',
+    fontSize: 34,
+    fontWeight: '900',
+    lineHeight: 42,
+    maxWidth: 720,
+    paddingBottom: theme.spacing.sm,
+    textAlign: 'center',
+    width: '100%'
+  },
+  certificateEyebrow: {
+    color: '#047857',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 2,
+    textAlign: 'center',
+    textTransform: 'uppercase'
+  },
+  certificateHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.md,
+    justifyContent: 'space-between',
+    width: '100%'
+  },
+  certificateLogo: {
+    borderRadius: theme.radii.md,
+    height: 46,
+    width: 46
+  },
+  certificateLogoWrap: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: theme.spacing.sm
+  },
+  certificateMetaGrid: {
+    borderTopColor: '#BBF7D0',
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.md,
+    justifyContent: 'space-between',
+    marginTop: theme.spacing.md,
+    paddingTop: theme.spacing.md,
+    width: '100%'
+  },
+  certificateMetaItem: {
+    flexBasis: 240,
+    flexGrow: 1,
+    gap: theme.spacing.xs
+  },
+  certificateMetaLabel: {
+    color: '#047857',
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase'
+  },
+  certificateMetaValue: {
+    color: '#111827',
+    fontSize: 14,
+    fontWeight: '900',
+    lineHeight: 20
+  },
+  certificateMuted: {
+    color: '#475569',
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center'
+  },
+  certificatePreview: {
+    backgroundColor: '#E5E7EB',
+    borderColor: '#2D3748',
+    padding: theme.spacing.md
+  },
+  certificateProgram: {
+    color: '#111827',
+    fontSize: 22,
+    fontWeight: '900',
+    lineHeight: 29,
+    maxWidth: 760,
+    textAlign: 'center'
+  },
+  certificateScore: {
+    color: '#047857',
+    fontSize: 22,
+    fontWeight: '900',
+    textAlign: 'center'
   },
   certificateTitle: {
-    color: theme.colors.text,
-    fontSize: 28,
+    color: '#064E3B',
+    fontSize: 38,
     fontWeight: '900',
+    lineHeight: 46,
+    textAlign: 'center'
+  },
+  certificateVerification: {
+    color: '#475569',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: theme.spacing.sm,
     textAlign: 'center'
   },
   copy: {
@@ -2080,6 +2503,16 @@ const styles = StyleSheet.create({
   },
   examCard: {
     gap: theme.spacing.md
+  },
+  excellenceSeal: {
+    alignItems: 'center',
+    backgroundColor: '#FACC15',
+    borderColor: '#A16207',
+    borderRadius: 999,
+    borderWidth: 4,
+    height: 104,
+    justifyContent: 'center',
+    width: 104
   },
   domainList: {
     gap: theme.spacing.md
@@ -2226,6 +2659,21 @@ const styles = StyleSheet.create({
   },
   selectedOptionText: {
     color: theme.colors.text
+  },
+  sealStrong: {
+    color: '#713F12',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 22,
+    textAlign: 'center'
+  },
+  sealText: {
+    color: '#713F12',
+    fontSize: 9,
+    fontWeight: '900',
+    lineHeight: 12,
+    textAlign: 'center',
+    textTransform: 'uppercase'
   },
   stack: {
     flex: 1,

@@ -1,12 +1,19 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { LearningHistoryItem, UpdateAccountSettingsInput, UpdateUserProfileInput, UserAccountProfile } from '@/features/profile';
+import type {
+  CertificateHistoryItem,
+  LearningHistoryItem,
+  UpdateAccountSettingsInput,
+  UpdateUserProfileInput,
+  UserAccountProfile
+} from '@/features/profile';
 import { userService } from '@/services';
 import { useAuth } from './AuthContext';
 
 type UserProfileContextValue = {
   errorMessage?: string;
   isProfileLoading: boolean;
+  addCertificateHistoryItem: (item: CertificateHistoryItem) => Promise<UserAccountProfile>;
   addLearningHistoryItem: (item: LearningHistoryItem) => Promise<UserAccountProfile>;
   profile: UserAccountProfile | null;
   refreshProfile: () => Promise<void>;
@@ -47,6 +54,16 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<UserProfileContextValue>(
     () => ({
+      addCertificateHistoryItem: async (item) => {
+        if (!profile) {
+          throw new Error('Profile is not loaded.');
+        }
+
+        setErrorMessage(undefined);
+        const updatedProfile = await userService.addCertificateHistoryItem(profile.userId, item);
+        setProfile(updatedProfile);
+        return updatedProfile;
+      },
       addLearningHistoryItem: async (item) => {
         if (!profile) {
           throw new Error('Profile is not loaded.');

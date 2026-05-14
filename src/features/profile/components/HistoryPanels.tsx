@@ -37,7 +37,7 @@ export function CertificateHistoryPanel({ onBack, profile }: HistoryPanelProps) 
     return (
       <EmptyState
         actionLabel="Back to profile"
-        description="Passed mock exams will appear here once certificate generation is connected."
+        description="Passed mock exams and quizzes will appear here after certificate generation."
         onAction={onBack}
         title="No certificate records yet"
       />

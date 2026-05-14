@@ -2,6 +2,7 @@ import { DEFAULT_CERTIFICATION_ID } from '@/constants/app';
 import type { AuthUser } from '@/features/auth';
 import type {
   AccountSettings,
+  CertificateHistoryItem,
   LearningHistoryItem,
   UpdateAccountSettingsInput,
   UpdateUserProfileInput,
@@ -56,6 +57,20 @@ function mergeAuthFields(profile: UserAccountProfile, user: AuthUser): UserAccou
 }
 
 export const userService: UserService = {
+  async addCertificateHistoryItem(userId: string, item: CertificateHistoryItem) {
+    const store = await loadStore();
+    const profile = store.profiles.find((storedProfile) => storedProfile.userId === userId);
+
+    if (!profile) {
+      throw new Error('Profile was not found for this user.');
+    }
+
+    return userService.saveProfile({
+      ...profile,
+      certificateHistory: [item, ...profile.certificateHistory.filter((historyItem) => historyItem.id !== item.id)]
+    });
+  },
+
   async addLearningHistoryItem(userId: string, item: LearningHistoryItem) {
     const store = await loadStore();
     const profile = store.profiles.find((storedProfile) => storedProfile.userId === userId);

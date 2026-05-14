@@ -64,7 +64,7 @@ export function ProfileSummary({
         </AppCard>
         <AppCard style={styles.actionCard}>
           <Text style={styles.cardTitle}>Certificate history</Text>
-          <Text style={styles.copy}>View earned certificate records and sample verification ids.</Text>
+          <Text style={styles.copy}>View earned certificate records, verification IDs, and share-ready previews.</Text>
           <PrimaryButton onPress={onCertificates}>Open certificates</PrimaryButton>
         </AppCard>
       </View>

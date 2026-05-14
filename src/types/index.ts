@@ -87,6 +87,19 @@ export type SubscriptionPlan = {
   features: readonly string[];
 };
 
+export type CertificateRecord = {
+  id: string;
+  userId: string;
+  userName: string;
+  certificationId: string;
+  certificationName: string;
+  score: number;
+  issuedAt: string;
+  certificateId: string;
+  verificationUrl: string;
+  sourceAttemptId?: string;
+};
+
 export type LegalPage = {
   id: 'privacy' | 'terms' | 'cookies' | 'data-handling';
   title: string;
