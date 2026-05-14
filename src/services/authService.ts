@@ -1,4 +1,5 @@
 import { DEFAULT_USER_ID } from '@/constants/app';
+import { ADMIN_MOCK_MODE_STORAGE_KEY, LOCAL_MOCK_ADMIN_EMAIL, LOCAL_MOCK_ADMIN_PASSWORD } from '@/constants/admin';
 import type {
   AuthErrorCode,
   AuthService,
@@ -65,14 +66,17 @@ function toPublicUser(record: LocalAuthRecord): AuthUser {
     verificationSentAt: _verificationSentAt,
     ...user
   } = record;
-  return user;
+  return {
+    ...user,
+    role: user.role ?? 'learner'
+  };
 }
 
 async function loadStore(): Promise<LocalAuthStore> {
   const stored = await storageService.getJson<LocalAuthStore>(AUTH_STORE_KEY);
-  const seeded = ensureDemoUser(stored ?? { users: [] });
+  const seeded = await ensureMockAdminUser(ensureDemoUser(stored ?? { users: [] }));
 
-  if (!stored || seeded.users.length !== stored.users.length) {
+  if (!stored || JSON.stringify(seeded.users) !== JSON.stringify(stored.users)) {
     await saveStore(seeded);
   }
 
@@ -101,7 +105,59 @@ function ensureDemoUser(store: LocalAuthStore): LocalAuthStore {
         id: DEFAULT_USER_ID,
         lastLoginAt: new Date().toISOString(),
         passwordDigest: createPasswordDigest(DEMO_EMAIL, DEMO_PASSWORD),
-        plan: 'Free'
+        plan: 'Free',
+        role: 'learner'
+      }
+    ]
+  };
+}
+
+function isLocalhostRuntime() {
+  try {
+    const hostname = globalThis.location?.hostname;
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  } catch {
+    return false;
+  }
+}
+
+async function ensureMockAdminUser(store: LocalAuthStore): Promise<LocalAuthStore> {
+  const mockAdminEnabled = isLocalhostRuntime() || (await storageService.getItem(ADMIN_MOCK_MODE_STORAGE_KEY)) === 'true';
+
+  if (!mockAdminEnabled) {
+    return store;
+  }
+
+  const normalizedAdminEmail = normalizeEmail(LOCAL_MOCK_ADMIN_EMAIL);
+
+  if (store.users.some((user) => normalizeEmail(user.email) === normalizedAdminEmail)) {
+    return {
+      users: store.users.map((user) =>
+        normalizeEmail(user.email) === normalizedAdminEmail
+          ? {
+              ...user,
+              emailVerified: true,
+              plan: 'Gold',
+              role: 'admin'
+            }
+          : user
+      )
+    };
+  }
+
+  return {
+    users: [
+      ...store.users,
+      {
+        createdAt: new Date().toISOString(),
+        email: LOCAL_MOCK_ADMIN_EMAIL,
+        emailVerified: true,
+        fullName: 'AceCloudCert Admin',
+        id: 'local-admin-user',
+        lastLoginAt: new Date().toISOString(),
+        passwordDigest: createPasswordDigest(LOCAL_MOCK_ADMIN_EMAIL, LOCAL_MOCK_ADMIN_PASSWORD),
+        plan: 'Gold',
+        role: 'admin'
       }
     ]
   };
@@ -253,6 +309,7 @@ export const authService: AuthService = {
       id: `local-user-${Date.now()}`,
       passwordDigest: createPasswordDigest(normalizedEmail, payload.password),
       plan: 'Free',
+      role: 'learner',
       verificationSentAt: now
     };
 

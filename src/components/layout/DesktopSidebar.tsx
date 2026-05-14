@@ -1,17 +1,22 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { DESKTOP_SECONDARY_NAVIGATION, PRIMARY_NAVIGATION } from '@/constants/routes';
+import { APP_ROUTES, DESKTOP_SECONDARY_NAVIGATION, PRIMARY_NAVIGATION } from '@/constants/routes';
 import { theme } from '@/constants/theme';
 import type { AppRoute } from '@/types';
 import { AppLogo } from './AppLogo';
 
 type DesktopSidebarProps = {
   activeRoute: AppRoute;
+  canViewAdmin?: boolean;
   navigate: (route: AppRoute) => void;
   onLogout: () => void;
   routeLabels: Record<AppRoute, string>;
 };
 
-export function DesktopSidebar({ activeRoute, navigate, onLogout, routeLabels }: DesktopSidebarProps) {
+export function DesktopSidebar({ activeRoute, canViewAdmin = false, navigate, onLogout, routeLabels }: DesktopSidebarProps) {
+  const secondaryRoutes = DESKTOP_SECONDARY_NAVIGATION.filter(
+    (route) => route !== APP_ROUTES.adminDashboard || canViewAdmin
+  );
+
   return (
     <View style={styles.sidebar}>
       <AppLogo />
@@ -25,7 +30,7 @@ export function DesktopSidebar({ activeRoute, navigate, onLogout, routeLabels }:
       </View>
       <View style={styles.group}>
         <Text style={styles.groupLabel}>Manage</Text>
-        {DESKTOP_SECONDARY_NAVIGATION.map((route) => (
+        {secondaryRoutes.map((route) => (
           <Pressable key={route} onPress={() => navigate(route)} style={[styles.item, activeRoute === route && styles.activeItem]}>
             <Text style={[styles.label, activeRoute === route && styles.activeLabel]}>{routeLabels[route]}</Text>
           </Pressable>

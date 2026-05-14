@@ -204,6 +204,36 @@ export const ROUTE_META: Record<AppRoute, RouteMeta> = {
     parent: APP_ROUTES.dashboard,
     title: 'Admin Dashboard',
     subtitle: 'Operational foundation for content and platform readiness.'
+  },
+  [APP_ROUTES.adminCertifications]: {
+    access: 'protected',
+    parent: APP_ROUTES.adminDashboard,
+    title: 'Manage Certifications',
+    subtitle: 'Admin-ready catalogue inventory and publishing metadata.'
+  },
+  [APP_ROUTES.adminQuestions]: {
+    access: 'protected',
+    parent: APP_ROUTES.adminDashboard,
+    title: 'Manage Questions',
+    subtitle: 'Question bank governance, domain coverage, and premium flags.'
+  },
+  [APP_ROUTES.adminKnowledgeTopics]: {
+    access: 'protected',
+    parent: APP_ROUTES.adminDashboard,
+    title: 'Manage Knowledge Topics',
+    subtitle: 'Knowledge base content inventory and related quiz links.'
+  },
+  [APP_ROUTES.adminUsers]: {
+    access: 'protected',
+    parent: APP_ROUTES.adminDashboard,
+    title: 'View Users',
+    subtitle: 'Placeholder for future Firebase Auth and Firestore user operations.'
+  },
+  [APP_ROUTES.adminAnalytics]: {
+    access: 'protected',
+    parent: APP_ROUTES.adminDashboard,
+    title: 'Test Analytics',
+    subtitle: 'Placeholder for future cross-user attempt analytics and reporting.'
   }
 };
 
@@ -238,7 +268,12 @@ export const ROUTE_LABELS: Record<AppRoute, string> = {
   [APP_ROUTES.certificateHistory]: 'Certificate History',
   [APP_ROUTES.deleteAccountRequest]: 'Delete Account',
   [APP_ROUTES.subscription]: 'Subscription',
-  [APP_ROUTES.adminDashboard]: 'Admin'
+  [APP_ROUTES.adminDashboard]: 'Admin',
+  [APP_ROUTES.adminCertifications]: 'Admin Certifications',
+  [APP_ROUTES.adminQuestions]: 'Admin Questions',
+  [APP_ROUTES.adminKnowledgeTopics]: 'Admin Topics',
+  [APP_ROUTES.adminUsers]: 'Admin Users',
+  [APP_ROUTES.adminAnalytics]: 'Admin Analytics'
 };
 
 const publicRouteSet = new Set<AppRoute>(PUBLIC_ROUTES);

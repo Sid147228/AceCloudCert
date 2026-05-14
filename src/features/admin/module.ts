@@ -5,7 +5,7 @@ export const adminFeature = defineFeature({
   id: 'admin',
   name: 'Admin',
   route: APP_ROUTES.adminDashboard,
-  summary: 'Future content operations for questions, topics, certification tracks, and publishing workflow.',
-  status: 'planned',
+  summary: 'Role-gated content operations for questions, topics, certification tracks, users, and analytics readiness.',
+  status: 'foundation',
   ownerDomain: 'Operations'
 });

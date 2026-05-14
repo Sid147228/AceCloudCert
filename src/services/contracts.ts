@@ -1,4 +1,5 @@
 import type { AttemptSummary, CertificateRecord, UserPlan } from '@/types';
+import type { AdminSnapshot } from '@/features/admin';
 import type { AuthUser } from '@/features/auth';
 import type {
   CertificateHistoryItem,
@@ -35,6 +36,10 @@ export type CertificateService = {
   getCertificateForAttempt: (userId: string, attemptId: string) => Promise<CertificateRecord | null>;
   listCertificates: (userId: string) => Promise<readonly CertificateRecord[]>;
   saveCertificate: (certificate: CertificateRecord) => Promise<CertificateRecord>;
+};
+
+export type AdminService = {
+  getDashboardSnapshot: () => Promise<AdminSnapshot>;
 };
 
 export type SubscriptionChangePreview = {

@@ -14,7 +14,8 @@ export type {
   LoginFormValues,
   PasswordResetPayload,
   SignupFormValues,
-  SignupPayload
+  SignupPayload,
+  UserRole
 } from './types';
 export {
   hasValidationErrors,

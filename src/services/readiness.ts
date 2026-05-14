@@ -20,5 +20,10 @@ export const serviceReadiness: readonly ServiceReadinessItem[] = [
     name: 'Stripe Billing',
     purpose: 'Checkout, customer portal, subscription lifecycle, and premium entitlement enforcement.',
     requiredConfiguration: ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'Price ids for Silver and Gold']
+  },
+  {
+    name: 'Admin RBAC',
+    purpose: 'Role claims, admin-only content operations, user lookup, and cross-user analytics.',
+    requiredConfiguration: ['Custom admin claims', 'Firestore admin rules', 'Audit log collection']
   }
 ];

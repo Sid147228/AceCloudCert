@@ -15,6 +15,8 @@ import { APP_ROUTES } from '@/constants/routes';
 import { theme } from '@/constants/theme';
 import { AuthProvider, UserProfileProvider, useAuth, useUserProfile } from '@/context';
 import { certifications, knowledgeTopics, legalPages, questionBank, subscriptionPlans } from '@/data';
+import { getAdminRouteGuard, isAdminRoute, isAdminUser } from '@/features/admin';
+import type { AdminSnapshot } from '@/features/admin';
 import { EmailVerificationNotice, ForgotPasswordForm, LoginForm, SignupForm } from '@/features/auth/components';
 import type { AuthUser } from '@/features/auth';
 import { CertificationCatalogue, CertificationDetail } from '@/features/certifications/components';
@@ -67,7 +69,7 @@ import {
 } from '@/features/subscriptions';
 import { ROUTE_LABELS, ROUTE_META, getBreadcrumbs, getNavigationRoute, isProtectedRoute } from '@/app/navigation';
 import { useAppNavigation } from '@/hooks';
-import { analyticsService, certificateService, serviceReadiness, storageService, testService } from '@/services';
+import { adminService, analyticsService, certificateService, serviceReadiness, storageService, testService } from '@/services';
 import type {
   AppRoute,
   CertificateRecord,
@@ -155,6 +157,7 @@ function AceCloudCertRoutes() {
   const [cookieConsentPreference, setCookieConsentPreference] = useState<CookieConsentPreference | null>(null);
   const [cookieConsentLoaded, setCookieConsentLoaded] = useState(false);
   const [cookieNotice, setCookieNotice] = useState<string | null>(null);
+  const [adminSnapshot, setAdminSnapshot] = useState<AdminSnapshot | null>(null);
 
   const domainCounts = useMemo(() => countQuestionsByDomain(questionBank), []);
   const selectedCertification =
@@ -164,6 +167,7 @@ function AceCloudCertRoutes() {
   const selectedCertificate =
     certificateRecords.find((certificate) => certificate.id === selectedCertificateId) ?? certificateRecords[0];
   const selectedTestModeConfig = getTestModeConfig(selectedTestMode);
+  const canViewAdmin = isAdminUser(user);
   const activeMenuRoute =
     isAuthenticated && !isProtectedRoute(activeRoute) ? getAuthenticatedPublicMenuRoute(activeRoute) : getNavigationRoute(activeRoute);
 
@@ -240,6 +244,29 @@ function AceCloudCertRoutes() {
   }, [isAuthenticated, user]);
 
   useEffect(() => {
+    if (!canViewAdmin) {
+      setAdminSnapshot(null);
+      return undefined;
+    }
+
+    let active = true;
+
+    async function loadAdminSnapshot() {
+      const snapshot = await adminService.getDashboardSnapshot();
+
+      if (active) {
+        setAdminSnapshot(snapshot);
+      }
+    }
+
+    void loadAdminSnapshot();
+
+    return () => {
+      active = false;
+    };
+  }, [canViewAdmin]);
+
+  useEffect(() => {
     if (!activeTestSession) {
       return undefined;
     }
@@ -264,6 +291,13 @@ function AceCloudCertRoutes() {
       return;
     }
 
+    const guard = getAdminRouteGuard(route, user);
+
+    if (!guard.allowed) {
+      setActiveRoute(APP_ROUTES.dashboard);
+      return;
+    }
+
     if (isAuthenticated && (authEntryRoutes.has(route) || route === APP_ROUTES.emailVerification)) {
       setActiveRoute(APP_ROUTES.dashboard);
       return;
@@ -273,11 +307,13 @@ function AceCloudCertRoutes() {
   }
 
   function completeAuthFlow(authUser: AuthUser) {
-    setActiveRoute(authUser.emailVerified ? redirectAfterLogin : APP_ROUTES.emailVerification);
+    const destination = getAdminRouteGuard(redirectAfterLogin, authUser).allowed ? redirectAfterLogin : APP_ROUTES.dashboard;
+    setActiveRoute(authUser.emailVerified ? destination : APP_ROUTES.emailVerification);
   }
 
   function completeVerification() {
-    setActiveRoute(redirectAfterLogin);
+    const destination = getAdminRouteGuard(redirectAfterLogin, user).allowed ? redirectAfterLogin : APP_ROUTES.dashboard;
+    setActiveRoute(destination);
   }
 
   function handleLogout() {
@@ -603,11 +639,46 @@ function AceCloudCertRoutes() {
     return <LoadingState message={isProfileLoading ? 'Loading your account profile...' : 'Preparing your secure workspace...'} />;
   }
 
+  function renderAdminRoute() {
+    const guard = getAdminRouteGuard(activeRoute, user);
+
+    if (!guard.allowed) {
+      return <AdminAccessDeniedPage navigate={navigate} reason={guard.reason} />;
+    }
+
+    if (!adminSnapshot) {
+      return <LoadingState message="Loading admin workspace..." />;
+    }
+
+    if (activeRoute === APP_ROUTES.adminCertifications) {
+      return <AdminCertificationsPage navigate={navigate} snapshot={adminSnapshot} />;
+    }
+
+    if (activeRoute === APP_ROUTES.adminQuestions) {
+      return <AdminQuestionsPage navigate={navigate} snapshot={adminSnapshot} />;
+    }
+
+    if (activeRoute === APP_ROUTES.adminKnowledgeTopics) {
+      return <AdminKnowledgeTopicsPage navigate={navigate} snapshot={adminSnapshot} />;
+    }
+
+    if (activeRoute === APP_ROUTES.adminUsers) {
+      return <AdminUsersPage navigate={navigate} snapshot={adminSnapshot} />;
+    }
+
+    if (activeRoute === APP_ROUTES.adminAnalytics) {
+      return <AdminAnalyticsPage navigate={navigate} snapshot={adminSnapshot} />;
+    }
+
+    return <AdminDashboardPage navigate={navigate} snapshot={adminSnapshot} />;
+  }
+
   if (isInitializing) {
     return (
       <AppShell
         activeMenuRoute={APP_ROUTES.landing}
         activeRoute={APP_ROUTES.landing}
+        canViewAdmin={false}
         isAuthenticated={false}
         navigate={navigate}
         onLogout={handleLogout}
@@ -627,6 +698,7 @@ function AceCloudCertRoutes() {
     <AppShell
       activeMenuRoute={activeMenuRoute}
       activeRoute={activeRoute}
+      canViewAdmin={canViewAdmin}
       isAuthenticated={isAuthenticated}
       navigate={navigate}
       onLogout={handleLogout}
@@ -858,8 +930,15 @@ function AceCloudCertRoutes() {
         ) : (
           showProtectedFallback()
         )
+      ) : isAdminRoute(activeRoute) ? (
+        renderAdminRoute()
       ) : (
-        <AdminDashboardPage navigate={navigate} />
+        <EmptyState
+          actionLabel="Back to dashboard"
+          description="This route is not available in the current app shell."
+          onAction={() => navigate(APP_ROUTES.dashboard)}
+          title="Route unavailable"
+        />
       )}
     </AppShell>
   );
@@ -2790,14 +2869,327 @@ function SubscriptionPage({
   );
 }
 
-function AdminDashboardPage({ navigate }: NavigationProps) {
+function AdminDashboardPage({ navigate, snapshot }: NavigationProps & { snapshot: AdminSnapshot }) {
   return (
-    <Section eyebrow="Admin" subtitle="Protected admin route for platform readiness and future content operations." title="Admin dashboard">
-      <Table columns={serviceColumns} getRowKey={(row) => row.name} rows={serviceReadiness} />
-      <View style={styles.actions}>
-        <PrimaryButton onPress={() => navigate(APP_ROUTES.certifications)}>Manage catalogue</PrimaryButton>
-        <SecondaryButton onPress={() => navigate(APP_ROUTES.tests)}>Review test routes</SecondaryButton>
+    <Section
+      eyebrow="Admin"
+      subtitle="Role-gated local admin foundation for content inventory, users, analytics, and backend readiness."
+      title="Admin dashboard"
+    >
+      <ToastNotification
+        message="Admin mode is local and role-gated. Production access should come from backend custom claims and audited security rules."
+        title="Admin access"
+        tone="info"
+      />
+
+      <View style={styles.metricGrid}>
+        {snapshot.metrics.map((metric) => (
+          <StatCard key={metric.label} label={metric.label} value={metric.value} />
+        ))}
       </View>
+
+      <View style={styles.cardGrid}>
+        <RouteCard
+          badge="Catalogue"
+          copy="Review certification tracks, status, plan requirements, and content coverage."
+          onPress={() => navigate(APP_ROUTES.adminCertifications)}
+          title="Manage certifications"
+        />
+        <RouteCard
+          badge="Question bank"
+          copy="Audit domains, difficulty, premium flags, references, and backend-ready question metadata."
+          onPress={() => navigate(APP_ROUTES.adminQuestions)}
+          title="Manage questions"
+        />
+        <RouteCard
+          badge="Study content"
+          copy="Review knowledge topics, categories, reading time, and related quiz links."
+          onPress={() => navigate(APP_ROUTES.adminKnowledgeTopics)}
+          title="Manage knowledge topics"
+        />
+        <RouteCard
+          badge="Users"
+          copy="Placeholder for Firebase Auth and Firestore user management."
+          onPress={() => navigate(APP_ROUTES.adminUsers)}
+          title="View users"
+        />
+        <RouteCard
+          badge="Analytics"
+          copy="Placeholder for cross-user test analytics and content performance reports."
+          onPress={() => navigate(APP_ROUTES.adminAnalytics)}
+          title="View test analytics"
+        />
+      </View>
+
+      <SectionHeader
+        eyebrow="Backend readiness"
+        subtitle="Services that need production credentials, rules, indexes, claims, or webhooks."
+        title="Operational checklist"
+      />
+      <Table columns={serviceColumns} getRowKey={(row) => row.name} rows={serviceReadiness} />
+    </Section>
+  );
+}
+
+function AdminCertificationsPage({ navigate, snapshot }: NavigationProps & { snapshot: AdminSnapshot }) {
+  const columns: readonly TableColumn<AdminSnapshot['certificationRows'][number]>[] = [
+    {
+      key: 'name',
+      minWidth: 260,
+      render: (row) => <Text style={styles.tableText}>{row.name}</Text>,
+      title: 'Certification'
+    },
+    {
+      key: 'provider',
+      minWidth: 150,
+      render: (row) => <Text style={styles.tableMuted}>{row.provider}</Text>,
+      title: 'Provider'
+    },
+    {
+      key: 'status',
+      minWidth: 150,
+      render: (row) => <Badge tone={row.status === 'active' ? 'success' : row.status === 'locked' ? 'info' : 'neutral'}>{row.status}</Badge>,
+      title: 'Status'
+    },
+    {
+      key: 'plan',
+      minWidth: 130,
+      render: (row) => <Text style={styles.tableMuted}>{row.planRequirement}</Text>,
+      title: 'Plan'
+    },
+    {
+      key: 'coverage',
+      minWidth: 190,
+      render: (row) => (
+        <Text style={styles.tableMuted}>
+          {row.questionCount} questions | {row.topicCount} topics
+        </Text>
+      ),
+      title: 'Coverage'
+    }
+  ];
+
+  return (
+    <Section
+      eyebrow="Admin content"
+      subtitle="Catalogue management foundation. Editing and publishing actions can map to Firestore content documents later."
+      title="Manage certifications"
+    >
+      <Table columns={columns} getRowKey={(row) => row.id} rows={snapshot.certificationRows} />
+      <View style={styles.actions}>
+        <PrimaryButton onPress={() => navigate(APP_ROUTES.certifications)}>Open learner catalogue</PrimaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.adminDashboard)}>Back to admin</SecondaryButton>
+      </View>
+    </Section>
+  );
+}
+
+function AdminQuestionsPage({ navigate, snapshot }: NavigationProps & { snapshot: AdminSnapshot }) {
+  const columns: readonly TableColumn<AdminSnapshot['questionRows'][number]>[] = [
+    {
+      key: 'id',
+      minWidth: 260,
+      render: (row) => <Text style={styles.tableText}>{row.id}</Text>,
+      title: 'Question ID'
+    },
+    {
+      key: 'domain',
+      minWidth: 190,
+      render: (row) => <Text style={styles.tableMuted}>{row.domain}</Text>,
+      title: 'Domain'
+    },
+    {
+      key: 'difficulty',
+      minWidth: 130,
+      render: (row) => <Badge tone={row.difficulty === 'hard' ? 'danger' : row.difficulty === 'medium' ? 'info' : 'success'}>{row.difficulty}</Badge>,
+      title: 'Difficulty'
+    },
+    {
+      key: 'premium',
+      minWidth: 130,
+      render: (row) => <Badge tone={row.isPremium ? 'primary' : 'neutral'}>{row.isPremium ? 'Premium' : 'Free'}</Badge>,
+      title: 'Access'
+    },
+    {
+      key: 'reference',
+      minWidth: 260,
+      render: (row) => <Text style={styles.tableMuted}>{row.reference}</Text>,
+      title: 'Reference'
+    }
+  ];
+
+  return (
+    <Section
+      eyebrow="Admin questions"
+      subtitle="Question bank governance for domain coverage, difficulty balance, premium access, and source references."
+      title="Manage questions"
+    >
+      <View style={styles.metricGrid}>
+        <StatCard label="Questions" value={snapshot.questionRows.length} />
+        <StatCard label="Domains" value={new Set(snapshot.questionRows.map((question) => question.domain)).size} />
+        <StatCard label="Premium" value={snapshot.questionRows.filter((question) => question.isPremium).length} />
+      </View>
+      <Table columns={columns} getRowKey={(row) => row.id} rows={snapshot.questionRows} />
+      <View style={styles.actions}>
+        <PrimaryButton onPress={() => navigate(APP_ROUTES.tests)}>Open learner tests</PrimaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.adminDashboard)}>Back to admin</SecondaryButton>
+      </View>
+    </Section>
+  );
+}
+
+function AdminKnowledgeTopicsPage({ navigate, snapshot }: NavigationProps & { snapshot: AdminSnapshot }) {
+  const columns: readonly TableColumn<AdminSnapshot['knowledgeTopicRows'][number]>[] = [
+    {
+      key: 'title',
+      minWidth: 260,
+      render: (row) => <Text style={styles.tableText}>{row.title}</Text>,
+      title: 'Topic'
+    },
+    {
+      key: 'category',
+      minWidth: 180,
+      render: (row) => <Text style={styles.tableMuted}>{row.category}</Text>,
+      title: 'Category'
+    },
+    {
+      key: 'time',
+      minWidth: 130,
+      render: (row) => <Text style={styles.tableMuted}>{row.estimatedReadingMinutes} min</Text>,
+      title: 'Reading'
+    },
+    {
+      key: 'questions',
+      minWidth: 150,
+      render: (row) => <Text style={styles.tableMuted}>{row.relatedQuestionCount} linked</Text>,
+      title: 'Quiz links'
+    }
+  ];
+
+  return (
+    <Section
+      eyebrow="Admin knowledge"
+      subtitle="Knowledge base inventory for editorial review, topic coverage, related questions, and future publishing workflow."
+      title="Manage knowledge topics"
+    >
+      <Table columns={columns} getRowKey={(row) => row.id} rows={snapshot.knowledgeTopicRows} />
+      <View style={styles.actions}>
+        <PrimaryButton onPress={() => navigate(APP_ROUTES.knowledgeBase)}>Open knowledge base</PrimaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.adminDashboard)}>Back to admin</SecondaryButton>
+      </View>
+    </Section>
+  );
+}
+
+function AdminUsersPage({ navigate, snapshot }: NavigationProps & { snapshot: AdminSnapshot }) {
+  const columns: readonly TableColumn<AdminSnapshot['userRows'][number]>[] = [
+    {
+      key: 'name',
+      minWidth: 220,
+      render: (row) => <Text style={styles.tableText}>{row.fullName}</Text>,
+      title: 'User'
+    },
+    {
+      key: 'email',
+      minWidth: 260,
+      render: (row) => <Text style={styles.tableMuted}>{row.email}</Text>,
+      title: 'Email'
+    },
+    {
+      key: 'role',
+      minWidth: 130,
+      render: (row) => <Badge tone={row.role === 'admin' ? 'primary' : 'neutral'}>{row.role}</Badge>,
+      title: 'Role'
+    },
+    {
+      key: 'plan',
+      minWidth: 120,
+      render: (row) => <Text style={styles.tableMuted}>{row.plan}</Text>,
+      title: 'Plan'
+    },
+    {
+      key: 'status',
+      minWidth: 180,
+      render: (row) => <Text style={styles.tableMuted}>{row.status}</Text>,
+      title: 'Source'
+    }
+  ];
+
+  return (
+    <Section
+      eyebrow="Admin users"
+      subtitle="Placeholder for future Firebase Auth user lookup, Firestore profile management, and role claim operations."
+      title="View users"
+    >
+      <ToastNotification
+        message="This page intentionally avoids real user mutation in the local build. Production should require backend admin claims and audit logs."
+        title="Backend pending"
+        tone="info"
+      />
+      <Table columns={columns} getRowKey={(row) => row.id} rows={snapshot.userRows} />
+      <View style={styles.actions}>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.adminDashboard)}>Back to admin</SecondaryButton>
+      </View>
+    </Section>
+  );
+}
+
+function AdminAnalyticsPage({ navigate, snapshot }: NavigationProps & { snapshot: AdminSnapshot }) {
+  const columns: readonly TableColumn<AdminSnapshot['analyticsRows'][number]>[] = [
+    {
+      key: 'name',
+      minWidth: 220,
+      render: (row) => <Text style={styles.tableText}>{row.name}</Text>,
+      title: 'Area'
+    },
+    {
+      key: 'status',
+      minWidth: 160,
+      render: (row) => <Badge tone={row.status === 'local ready' ? 'success' : 'info'}>{row.status}</Badge>,
+      title: 'Status'
+    },
+    {
+      key: 'description',
+      minWidth: 420,
+      render: (row) => <Text style={styles.tableMuted}>{row.description}</Text>,
+      title: 'Readiness'
+    }
+  ];
+
+  return (
+    <Section
+      eyebrow="Admin analytics"
+      subtitle="Analytics foundation for saved attempts now and backend cohort reporting later."
+      title="View test analytics"
+    >
+      <Table columns={columns} getRowKey={(row) => row.id} rows={snapshot.analyticsRows} />
+      <View style={styles.actions}>
+        <PrimaryButton onPress={() => navigate(APP_ROUTES.tests)}>Open learner analytics</PrimaryButton>
+        <SecondaryButton onPress={() => navigate(APP_ROUTES.adminDashboard)}>Back to admin</SecondaryButton>
+      </View>
+    </Section>
+  );
+}
+
+function AdminAccessDeniedPage({ navigate, reason }: NavigationProps & { reason?: string }) {
+  return (
+    <Section
+      eyebrow="Restricted"
+      subtitle="Admin routes are protected by the role guard and hidden from standard learner navigation."
+      title="Admin access required"
+    >
+      <AppCard style={styles.dangerZone}>
+        <Badge tone="danger">No admin role</Badge>
+        <Text style={styles.copy}>{reason ?? 'Your account does not have permission to open this admin route.'}</Text>
+        <Text style={styles.copy}>
+          Local mock admin mode is opt-in for development. Production access should be issued by backend custom claims,
+          not by client-side settings.
+        </Text>
+        <View style={styles.actions}>
+          <PrimaryButton onPress={() => navigate(APP_ROUTES.dashboard)}>Back to dashboard</PrimaryButton>
+          <SecondaryButton onPress={() => navigate(APP_ROUTES.settings)}>Account settings</SecondaryButton>
+        </View>
+      </AppCard>
     </Section>
   );
 }

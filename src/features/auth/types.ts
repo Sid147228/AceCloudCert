@@ -1,6 +1,7 @@
 import type { UserPlan } from '@/types';
 
 export type AuthStatus = 'loading' | 'unauthenticated' | 'verification-required' | 'authenticated';
+export type UserRole = 'learner' | 'admin';
 
 export type AuthAction =
   | 'initialize'
@@ -18,6 +19,7 @@ export type AuthUser = {
   email: string;
   emailVerified: boolean;
   plan: UserPlan;
+  role: UserRole;
   createdAt: string;
   lastLoginAt?: string;
 };

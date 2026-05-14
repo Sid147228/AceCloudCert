@@ -1,5 +1,6 @@
 export type { AnalyticsService } from './analyticsService';
-export type { AuthService, BillingService, CertificateService, ProgressService, UserService } from './contracts';
+export type { AdminService, AuthService, BillingService, CertificateService, ProgressService, UserService } from './contracts';
+export { adminService } from './adminService';
 export { analyticsService } from './analyticsService';
 export { authService, getAuthErrorMessage } from './authService';
 export { certificateService } from './certificateService';

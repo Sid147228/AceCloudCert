@@ -14,6 +14,7 @@ import { PublicHeader } from './PublicHeader';
 type AppShellProps = {
   activeRoute: AppRoute;
   activeMenuRoute: AppRoute;
+  canViewAdmin?: boolean;
   children: ReactNode;
   isAuthenticated: boolean;
   navigate: (route: AppRoute) => void;
@@ -24,6 +25,7 @@ type AppShellProps = {
 export function AppShell({
   activeRoute,
   activeMenuRoute,
+  canViewAdmin = false,
   children,
   isAuthenticated,
   navigate,
@@ -38,7 +40,13 @@ export function AppShell({
       <StatusBar style="light" />
       <View style={styles.shell}>
         {desktop && isAuthenticated ? (
-          <DesktopSidebar activeRoute={activeMenuRoute} navigate={navigate} onLogout={onLogout} routeLabels={routeLabels} />
+          <DesktopSidebar
+            activeRoute={activeMenuRoute}
+            canViewAdmin={canViewAdmin}
+            navigate={navigate}
+            onLogout={onLogout}
+            routeLabels={routeLabels}
+          />
         ) : null}
         <View style={styles.main}>
           {!isAuthenticated ? (

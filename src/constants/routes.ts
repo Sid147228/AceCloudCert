@@ -29,7 +29,12 @@ export const APP_ROUTES = {
   certificateHistory: 'certificate-history',
   deleteAccountRequest: 'delete-account-request',
   subscription: 'subscription',
-  adminDashboard: 'admin-dashboard'
+  adminDashboard: 'admin-dashboard',
+  adminCertifications: 'admin-certifications',
+  adminQuestions: 'admin-questions',
+  adminKnowledgeTopics: 'admin-knowledge-topics',
+  adminUsers: 'admin-users',
+  adminAnalytics: 'admin-analytics'
 } as const;
 
 export const PUBLIC_ROUTES = [
@@ -66,7 +71,12 @@ export const PROTECTED_ROUTES = [
   APP_ROUTES.certificateHistory,
   APP_ROUTES.deleteAccountRequest,
   APP_ROUTES.subscription,
-  APP_ROUTES.adminDashboard
+  APP_ROUTES.adminDashboard,
+  APP_ROUTES.adminCertifications,
+  APP_ROUTES.adminQuestions,
+  APP_ROUTES.adminKnowledgeTopics,
+  APP_ROUTES.adminUsers,
+  APP_ROUTES.adminAnalytics
 ] as const;
 
 export const PRIMARY_NAVIGATION = [
@@ -90,6 +100,15 @@ export const DESKTOP_SECONDARY_NAVIGATION = [
   APP_ROUTES.subscription,
   APP_ROUTES.settings,
   APP_ROUTES.adminDashboard
+] as const;
+
+export const ADMIN_ROUTES = [
+  APP_ROUTES.adminDashboard,
+  APP_ROUTES.adminCertifications,
+  APP_ROUTES.adminQuestions,
+  APP_ROUTES.adminKnowledgeTopics,
+  APP_ROUTES.adminUsers,
+  APP_ROUTES.adminAnalytics
 ] as const;
 
 export const PUBLIC_NAVIGATION = [
