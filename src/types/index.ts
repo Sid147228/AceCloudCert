@@ -14,6 +14,17 @@ export type FeatureModule = {
 };
 
 export type UserPlan = 'Free' | 'Silver' | 'Gold';
+export type SubscriptionPlanId = 'free' | 'silver-monthly' | 'silver-yearly' | 'gold-monthly' | 'gold-yearly';
+export type SubscriptionInterval = 'free' | 'monthly' | 'yearly';
+export type SubscriptionStatus =
+  | 'free'
+  | 'mock-active'
+  | 'checkout-pending'
+  | 'trialing'
+  | 'active'
+  | 'past_due'
+  | 'cancelled'
+  | 'incomplete';
 
 export type UserProfile = {
   id: string;
@@ -81,14 +92,17 @@ export type KnowledgeTopic = {
 };
 
 export type SubscriptionPlan = {
-  id: UserPlan;
-  name: UserPlan;
+  id: SubscriptionPlanId;
+  name: string;
+  tier: UserPlan;
+  interval: SubscriptionInterval;
   description: string;
   priceLabel: string;
   ctaLabel: string;
   features: readonly string[];
   limitations: readonly string[];
   stripePriceLookupKey?: string;
+  stripePriceEnvKey?: string;
 };
 
 export type CertificateRecord = {

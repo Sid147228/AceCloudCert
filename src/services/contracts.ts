@@ -1,4 +1,4 @@
-import type { AttemptSummary, CertificateRecord, Certification, Question, UserPlan } from '@/types';
+import type { AttemptSummary, CertificateRecord, Certification, Question, SubscriptionPlanId, UserPlan } from '@/types';
 import type { AdminSnapshot } from '@/features/admin';
 import type { AuthUser } from '@/features/auth';
 import type {
@@ -27,8 +27,8 @@ export type ProgressService = {
 
 export type BillingService = {
   getPlan: (userId: string) => Promise<UserPlan>;
-  previewPlanChange: (userId: string, nextPlan: UserPlan) => Promise<SubscriptionChangePreview>;
-  updatePlan: (userId: string, nextPlan: UserPlan) => Promise<SubscriptionChangeResult>;
+  previewPlanChange: (userId: string, nextPlanId: SubscriptionPlanId) => Promise<SubscriptionChangePreview>;
+  updatePlan: (userId: string, nextPlanId: SubscriptionPlanId) => Promise<SubscriptionChangeResult>;
 };
 
 export type CertificateService = {
@@ -48,9 +48,12 @@ export type AdminService = {
 };
 
 export type SubscriptionChangePreview = {
-  checkoutMode: 'mock';
+  checkoutMode: 'mock' | 'stripe';
+  checkoutUrl?: string;
   currentPlan: UserPlan;
   nextPlan: UserPlan;
+  nextPlanId: SubscriptionPlanId;
+  stripePriceLookupKey?: string;
   stripeReady: boolean;
   summary: string;
 };

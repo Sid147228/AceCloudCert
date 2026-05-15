@@ -63,8 +63,10 @@ import {
   canAccessCertification,
   canAccessFeature,
   canStartTestMode,
+  getDefaultPlanIdForTier,
   getEffectiveCertificationStatus,
   getPlanChangeVerb,
+  getPlanTier,
   getRecommendedUpgradePlan
 } from '@/features/subscriptions';
 import { ROUTE_LABELS, ROUTE_META, getBreadcrumbs, getNavigationRoute, isProtectedRoute } from '@/app/navigation';
@@ -86,6 +88,7 @@ import type {
   LegalPage,
   ServiceReadinessItem,
   SubscriptionPlan,
+  SubscriptionPlanId,
   UserPlan
 } from '@/types';
 import { countQuestionsByDomain, formatCount, formatPercent } from '@/utils';
@@ -146,7 +149,7 @@ function AceCloudCertRoutes() {
   } = useUserProfile();
   const [redirectAfterLogin, setRedirectAfterLogin] = useState<AppRoute>(APP_ROUTES.dashboard);
   const [activeTestTab, setActiveTestTab] = useState('overview');
-  const [selectedSubscriptionPlan, setSelectedSubscriptionPlan] = useState<UserPlan>('Silver');
+  const [selectedSubscriptionPlan, setSelectedSubscriptionPlan] = useState<SubscriptionPlanId>('silver-monthly');
   const [subscriptionNotice, setSubscriptionNotice] = useState<string | null>(null);
   const [certificationFilters, setCertificationFilters] = useState<CertificationFilters>({
     level: 'All',
@@ -372,7 +375,7 @@ function AceCloudCertRoutes() {
     setSelectedCertificationId(certification.id);
 
     if (profile && certification.status !== 'coming soon' && !canAccessCertification(profile.plan, certification)) {
-      setSelectedSubscriptionPlan(certification.planRequirement);
+      setSelectedSubscriptionPlan(getDefaultPlanIdForTier(certification.planRequirement));
       setSubscriptionNotice(`${certification.name} requires the ${certification.planRequirement} plan.`);
       navigate(APP_ROUTES.subscription);
       return;
@@ -389,7 +392,7 @@ function AceCloudCertRoutes() {
     }
 
     if (certification.status === 'locked') {
-      setSelectedSubscriptionPlan(certification.planRequirement);
+      setSelectedSubscriptionPlan(getDefaultPlanIdForTier(certification.planRequirement));
       navigate(APP_ROUTES.subscription);
       return;
     }
@@ -636,26 +639,27 @@ function AceCloudCertRoutes() {
     setCertificateNotice('LinkedIn sharing opened with the certificate verification link.');
   }
 
-  async function changeSubscriptionPlan(plan: UserPlan) {
-    setSelectedSubscriptionPlan(plan);
+  async function changeSubscriptionPlan(planId: SubscriptionPlanId) {
+    setSelectedSubscriptionPlan(planId);
 
     if (!profile) {
       return;
     }
 
     const currentPlan = profile.plan;
-    const updatedProfile = await updatePlan(plan);
-    const action = getPlanChangeVerb(currentPlan, plan).toLowerCase();
+    const updatedProfile = await updatePlan(planId);
+    const nextTier = getPlanTier(planId);
+    const action = getPlanChangeVerb(currentPlan, planId).toLowerCase();
 
     setSubscriptionNotice(
-      currentPlan === plan
+      currentPlan === nextTier
         ? `${updatedProfile.plan} is already your active plan.`
-        : `Mock ${action} complete. ${updatedProfile.plan} is now stored on your local learner profile.`
+        : `Mock ${action} complete. ${updatedProfile.plan} entitlements are now stored on your learner profile.`
     );
   }
 
-  function selectPricingPlan(plan: UserPlan) {
-    setSelectedSubscriptionPlan(plan);
+  function selectPricingPlan(planId: SubscriptionPlanId) {
+    setSelectedSubscriptionPlan(planId);
 
     if (isAuthenticated) {
       navigate(APP_ROUTES.subscription);
@@ -1122,7 +1126,7 @@ function PricingPage({
 }: NavigationProps & {
   currentPlan?: UserPlan;
   isAuthenticated: boolean;
-  onSelectPlan: (plan: UserPlan) => void;
+  onSelectPlan: (plan: SubscriptionPlanId) => void;
 }) {
   return (
     <Section
@@ -1155,16 +1159,22 @@ function PlanCard({
 }: {
   currentPlan?: UserPlan;
   isAuthenticated: boolean;
-  onSelectPlan: (plan: UserPlan) => void;
+  onSelectPlan: (plan: SubscriptionPlanId) => void;
   plan: SubscriptionPlan;
 }) {
-  const isCurrent = currentPlan === plan.id;
+  const isCurrent = currentPlan === plan.tier;
 
   return (
     <AppCard style={[styles.flexCard, isCurrent && styles.currentPlanCard]}>
       <View style={styles.row}>
         <Text style={styles.cardTitle}>{plan.name}</Text>
-        {isCurrent ? <Badge tone="success">Current</Badge> : plan.id === 'Gold' ? <Badge tone="primary">Premium</Badge> : <Badge tone="info">Plan</Badge>}
+        {isCurrent ? (
+          <Badge tone="success">Current tier</Badge>
+        ) : plan.tier === 'Gold' ? (
+          <Badge tone="primary">Premium</Badge>
+        ) : (
+          <Badge tone="info">{plan.interval}</Badge>
+        )}
       </View>
       <Text style={styles.price}>{plan.priceLabel}</Text>
       <Text style={styles.copy}>{plan.description}</Text>
@@ -2832,16 +2842,17 @@ function SubscriptionPage({
   selectedPlan
 }: NavigationProps & {
   notice: string | null;
-  onChangePlan: (plan: UserPlan) => void;
-  onSelectPlan: (plan: UserPlan) => void;
+  onChangePlan: (plan: SubscriptionPlanId) => void;
+  onSelectPlan: (plan: SubscriptionPlanId) => void;
   profile: UserAccountProfile;
-  selectedPlan: UserPlan;
+  selectedPlan: SubscriptionPlanId;
 }) {
+  const fallbackSubscriptionPlan = subscriptionPlans[0] as SubscriptionPlan;
+  const currentPlanDetails =
+    subscriptionPlans.find((plan) => plan.id === getDefaultPlanIdForTier(profile.plan)) ?? fallbackSubscriptionPlan;
   const selectedPlanDetails =
     subscriptionPlans.find((plan) => plan.id === selectedPlan) ??
-    subscriptionPlans.find((plan) => plan.id === profile.plan) ??
-    subscriptionPlans[0];
-  const currentPlanDetails = subscriptionPlans.find((plan) => plan.id === profile.plan) ?? subscriptionPlans[0];
+    currentPlanDetails;
   const selectedAction = getPlanChangeVerb(profile.plan, selectedPlan);
 
   return (
@@ -2858,7 +2869,7 @@ function SubscriptionPage({
             <Text style={styles.price}>{currentPlanDetails?.priceLabel ?? 'GBP 0'}</Text>
           </View>
           <Text style={styles.cardTitle}>{profile.plan}</Text>
-          <Text style={styles.copy}>Your active plan is stored on the local learner profile and controls entitlement checks.</Text>
+          <Text style={styles.copy}>Your active tier is stored on the learner profile. Feature access is resolved through entitlement logic.</Text>
           {(currentPlanDetails?.features ?? []).map((feature) => (
             <Text key={feature} style={styles.copyStrong}>
               - {feature}
@@ -2871,15 +2882,17 @@ function SubscriptionPage({
             <Badge tone="info">Mock checkout</Badge>
             <Text style={styles.price}>{selectedPlanDetails?.priceLabel ?? 'GBP 0'}</Text>
           </View>
-          <Text style={styles.cardTitle}>{selectedAction === 'Current plan' ? 'Manage current plan' : `${selectedAction} to ${selectedPlan}`}</Text>
+          <Text style={styles.cardTitle}>
+            {selectedAction === 'Current plan' ? 'Manage current plan' : `${selectedAction} to ${selectedPlanDetails.name}`}
+          </Text>
           <Text style={styles.copy}>
-            This flow simulates checkout locally. A future Stripe integration can replace this action using the plan lookup key.
+            This flow simulates checkout locally. Stripe Checkout should be created server-side through the placeholder API route.
           </Text>
           <Text style={styles.referenceText}>
             {selectedPlanDetails?.stripePriceLookupKey ?? 'No Stripe price required for Free'}
           </Text>
           <PrimaryButton onPress={() => onChangePlan(selectedPlan)}>
-            {selectedAction === 'Current plan' ? 'Confirm current plan' : `${selectedAction} plan`}
+            {selectedAction === 'Current plan' ? 'Confirm current plan' : `${selectedAction} ${selectedPlanDetails.interval}`}
           </PrimaryButton>
         </AppCard>
       </View>

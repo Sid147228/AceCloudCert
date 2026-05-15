@@ -8,7 +8,7 @@ import type {
   UserAccountProfile
 } from '@/features/profile';
 import { subscriptionService, userService } from '@/services';
-import type { UserPlan } from '@/types';
+import type { SubscriptionPlanId } from '@/types';
 import { useAuth } from './AuthContext';
 
 type UserProfileContextValue = {
@@ -18,7 +18,7 @@ type UserProfileContextValue = {
   addLearningHistoryItem: (item: LearningHistoryItem) => Promise<UserAccountProfile>;
   profile: UserAccountProfile | null;
   refreshProfile: () => Promise<void>;
-  updatePlan: (plan: UserPlan) => Promise<UserAccountProfile>;
+  updatePlan: (planId: SubscriptionPlanId) => Promise<UserAccountProfile>;
   updateProfile: (input: UpdateUserProfileInput) => Promise<UserAccountProfile>;
   updateSettings: (input: UpdateAccountSettingsInput) => Promise<UserAccountProfile>;
 };

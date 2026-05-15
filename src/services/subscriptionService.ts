@@ -1,16 +1,20 @@
 import type { BillingService, SubscriptionChangePreview } from './contracts';
 import { userService } from './userService';
 import { storageService } from './storageService';
-import type { UserPlan } from '@/types';
+import type { SubscriptionPlanId, UserPlan } from '@/types';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { FIRESTORE_COLLECTIONS, getFirebaseFirestoreInstance, isFirebaseBackendEnabled } from './firebase';
 import { wrapFirebaseError } from './firebaseError';
 import { toFirestoreSubscription } from './firestoreModels';
+import { getPlanTier, getSubscriptionPlan } from '@/features/subscriptions';
+import { stripeService } from './stripeService';
 
 type SubscriptionAuditEvent = {
-  checkoutMode: 'mock';
+  checkoutMode: 'mock' | 'stripe';
   currentPlan: UserPlan;
+  nextPlanId: SubscriptionPlanId;
   nextPlan: UserPlan;
+  stripePriceLookupKey?: string;
   updatedAt: string;
   userId: string;
 };
@@ -29,17 +33,30 @@ async function saveStore(store: SubscriptionAuditStore) {
   await storageService.setJson(SUBSCRIPTION_AUDIT_STORE_KEY, store);
 }
 
-function buildPreview(userId: string, currentPlan: UserPlan, nextPlan: UserPlan): SubscriptionChangePreview {
+function buildPreview(
+  userId: string,
+  currentPlan: UserPlan,
+  nextPlanId: SubscriptionPlanId,
+  checkoutMode: 'mock' | 'stripe' = 'mock',
+  checkoutUrl?: string
+): SubscriptionChangePreview {
+  const selectedPlan = getSubscriptionPlan(nextPlanId);
+  const nextPlan = selectedPlan.tier;
   const summary =
     currentPlan === nextPlan
       ? `You are already on ${currentPlan}.`
-      : `Mock checkout will switch this local learner from ${currentPlan} to ${nextPlan}. Stripe Checkout can replace this handoff later.`;
+      : checkoutMode === 'stripe'
+        ? `Stripe Checkout is ready for ${selectedPlan.name}. Complete checkout to activate ${nextPlan}.`
+        : `Mock checkout will switch this learner from ${currentPlan} to ${selectedPlan.name}. Stripe Checkout can replace this handoff later.`;
 
   return {
-    checkoutMode: 'mock',
+    checkoutMode,
+    checkoutUrl,
     currentPlan,
     nextPlan,
-    stripeReady: Boolean(userId),
+    nextPlanId,
+    stripePriceLookupKey: selectedPlan.stripePriceLookupKey,
+    stripeReady: checkoutMode === 'stripe' && Boolean(checkoutUrl) && Boolean(userId),
     summary
   };
 }
@@ -70,13 +87,22 @@ export const subscriptionService: BillingService = {
     return profile?.plan ?? 'Free';
   },
 
-  async previewPlanChange(userId, nextPlan) {
+  async previewPlanChange(userId, nextPlanId) {
     const currentPlan = await subscriptionService.getPlan(userId);
-    return buildPreview(userId, currentPlan, nextPlan);
+    const checkout = await stripeService.createCheckoutSession({
+      planId: nextPlanId,
+      userId
+    });
+    return buildPreview(userId, currentPlan, nextPlanId, checkout.checkoutMode, checkout.checkoutUrl);
   },
 
-  async updatePlan(userId, nextPlan) {
+  async updatePlan(userId, nextPlanId) {
     const currentPlan = await subscriptionService.getPlan(userId);
+    const nextPlan = getPlanTier(nextPlanId);
+    const checkout = await stripeService.createCheckoutSession({
+      planId: nextPlanId,
+      userId
+    });
     const profile = await userService.updatePlan(userId, nextPlan);
     const updatedAt = new Date().toISOString();
 
@@ -87,13 +113,13 @@ export const subscriptionService: BillingService = {
         if (db) {
           await setDoc(
             doc(db, FIRESTORE_COLLECTIONS.subscriptions, userId),
-            toFirestoreSubscription(userId, currentPlan, nextPlan),
+            toFirestoreSubscription(userId, currentPlan, nextPlanId, checkout.checkoutMode),
             { merge: true }
           );
         }
 
         return {
-          ...buildPreview(userId, currentPlan, nextPlan),
+          ...buildPreview(userId, currentPlan, nextPlanId, checkout.checkoutMode, checkout.checkoutUrl),
           profile,
           updatedAt
         };
@@ -104,9 +130,11 @@ export const subscriptionService: BillingService = {
 
     const store = await loadStore();
     const event: SubscriptionAuditEvent = {
-      checkoutMode: 'mock',
+      checkoutMode: checkout.checkoutMode,
       currentPlan,
+      nextPlanId,
       nextPlan,
+      stripePriceLookupKey: getSubscriptionPlan(nextPlanId).stripePriceLookupKey,
       updatedAt,
       userId
     };
@@ -116,7 +144,7 @@ export const subscriptionService: BillingService = {
     });
 
     return {
-      ...buildPreview(userId, currentPlan, nextPlan),
+      ...buildPreview(userId, currentPlan, nextPlanId, checkout.checkoutMode, checkout.checkoutUrl),
       profile,
       updatedAt
     };

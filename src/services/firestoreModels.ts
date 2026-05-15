@@ -1,7 +1,8 @@
 import type { TestAttempt } from '@/features/tests';
 import type { CertificateHistoryItem, LearningHistoryItem, UserAccountProfile } from '@/features/profile';
 import type { AuthUser, UserRole } from '@/features/auth';
-import type { CertificateRecord, Certification, Question, UserPlan } from '@/types';
+import { getSubscriptionPlan } from '@/features/subscriptions/pricing';
+import type { CertificateRecord, Certification, Question, SubscriptionInterval, SubscriptionPlanId, SubscriptionStatus, UserPlan } from '@/types';
 
 const FIRESTORE_SCHEMA_VERSION = 1;
 
@@ -39,10 +40,13 @@ export type FirestoreSubscriptionDocument = FirestoreDocumentBase & {
   checkoutMode: 'mock' | 'stripe';
   currentPlan: UserPlan;
   nextPlan?: UserPlan;
+  planId: SubscriptionPlanId;
+  billingInterval: SubscriptionInterval;
   plan: UserPlan;
   provider: 'mock' | 'stripe';
-  status: 'mock-active' | 'active' | 'cancelled' | 'past_due';
+  status: SubscriptionStatus;
   stripeCustomerId?: string;
+  stripePriceLookupKey?: string;
   stripeSubscriptionId?: string;
   userId: string;
 };
@@ -187,21 +191,25 @@ export function fromFirestoreQuestion(id: string, document: Partial<FirestoreQue
 export function toFirestoreSubscription(
   userId: string,
   currentPlan: UserPlan,
-  nextPlan: UserPlan,
+  nextPlanId: SubscriptionPlanId,
   checkoutMode: 'mock' | 'stripe' = 'mock'
 ): FirestoreSubscriptionDocument {
   const now = new Date().toISOString();
+  const selectedPlan = getSubscriptionPlan(nextPlanId);
 
   return {
+    billingInterval: selectedPlan.interval,
     checkoutMode,
     createdAt: now,
     currentPlan,
     id: userId,
-    nextPlan,
-    plan: nextPlan,
+    nextPlan: selectedPlan.tier,
+    plan: selectedPlan.tier,
+    planId: nextPlanId,
     provider: checkoutMode,
     schemaVersion: FIRESTORE_SCHEMA_VERSION,
-    status: checkoutMode === 'mock' ? 'mock-active' : 'active',
+    status: checkoutMode === 'mock' ? 'mock-active' : 'checkout-pending',
+    stripePriceLookupKey: selectedPlan.stripePriceLookupKey,
     updatedAt: now,
     userId
   };

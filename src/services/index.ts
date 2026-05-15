@@ -21,6 +21,8 @@ export {
 } from './firebase';
 export { serviceReadiness } from './readiness';
 export { storageService } from './storageService';
+export { stripeService } from './stripeService';
+export type { CheckoutSessionResult, CreateCheckoutSessionInput } from './stripeService';
 export { subscriptionService } from './subscriptionService';
 export { testService } from './testService';
 export { userService } from './userService';

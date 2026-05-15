@@ -52,6 +52,24 @@ The Firestore collection names are centralized in `src/services/firebase.ts`:
 
 If Firebase mode is not requested or the required Firebase variables are missing, the app keeps using the local mock services.
 
+## Stripe Subscription Architecture
+
+Stripe is prepared as a server-side integration only. Do not place `STRIPE_SECRET_KEY`, webhook secrets, or price IDs that should remain private in frontend code.
+
+Client-side mock mode stays active unless explicitly enabled:
+
+```bash
+EXPO_PUBLIC_STRIPE_CHECKOUT_ENABLED=false
+EXPO_PUBLIC_STRIPE_CHECKOUT_API_URL=/api/stripe/checkout-session
+```
+
+Server placeholders:
+
+- `api/stripe/checkout-session.js` - create a Checkout Session server-side later with `STRIPE_SECRET_KEY`.
+- `api/stripe/webhook.js` - verify `Stripe-Signature` against the raw body later with `STRIPE_WEBHOOK_SECRET`.
+
+Pricing and entitlement logic lives in `src/features/subscriptions/pricing.ts` and `src/features/subscriptions/helpers.ts`. Premium feature locks should call the entitlement helpers rather than checking plan names directly.
+
 ## Design System
 
 The product now uses an AceCloudCert design system with official logo usage, dark enterprise SaaS colors, mobile-first layout, reusable navigation, state components, form controls, cards, tabs, tables, and notification primitives.

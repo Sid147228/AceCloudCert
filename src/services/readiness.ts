@@ -29,7 +29,12 @@ export const serviceReadiness: readonly ServiceReadinessItem[] = [
   {
     name: 'Stripe Billing',
     purpose: 'Checkout, customer portal, subscription lifecycle, and premium entitlement enforcement.',
-    requiredConfiguration: ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'Price ids for Silver and Gold']
+    requiredConfiguration: [
+      'Server-only STRIPE_SECRET_KEY',
+      'Server-only STRIPE_WEBHOOK_SECRET',
+      'Stripe price ids for Silver Monthly, Silver Yearly, Gold Monthly, and Gold Yearly',
+      'Webhook handler for checkout and subscription lifecycle events'
+    ]
   },
   {
     name: 'Admin RBAC',

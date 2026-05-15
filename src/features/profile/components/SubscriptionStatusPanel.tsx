@@ -3,6 +3,7 @@ import { AppCard } from '@/components/cards';
 import { Badge, PrimaryButton, SecondaryButton } from '@/components/ui';
 import { theme } from '@/constants/theme';
 import { subscriptionPlans } from '@/data';
+import { getDefaultPlanIdForTier } from '@/features/subscriptions';
 import type { UserAccountProfile } from '../types';
 
 type SubscriptionStatusPanelProps = {
@@ -12,7 +13,9 @@ type SubscriptionStatusPanelProps = {
 };
 
 export function SubscriptionStatusPanel({ onBack, onPricing, profile }: SubscriptionStatusPanelProps) {
-  const currentPlan = subscriptionPlans.find((plan) => plan.id === profile.plan) ?? subscriptionPlans[0];
+  const currentPlan =
+    subscriptionPlans.find((plan) => plan.id === getDefaultPlanIdForTier(profile.plan)) ??
+    (subscriptionPlans[0] as (typeof subscriptionPlans)[number]);
 
   return (
     <View style={styles.wrap}>

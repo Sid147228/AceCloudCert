@@ -1,4 +1,5 @@
 import { questionBank } from '@/data/questions';
+import { canAccessFeature } from '@/features/subscriptions';
 import type { Question, QuestionDifficulty, UserPlan } from '@/types';
 
 export function getQuestionsByCertification(
@@ -20,11 +21,11 @@ export function getQuestionsByDifficulty(
 }
 
 export function getQuestionsByPlan(plan: UserPlan, questions: readonly Question[] = questionBank): readonly Question[] {
-  if (plan === 'Free') {
-    return questions.filter((question) => !question.isPremium);
+  if (canAccessFeature(plan, 'fullQuestionBank')) {
+    return questions;
   }
 
-  return questions;
+  return questions.filter((question) => !question.isPremium);
 }
 
 export function getQuestionById(questionId: string, questions: readonly Question[] = questionBank): Question | undefined {
