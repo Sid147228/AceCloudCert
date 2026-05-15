@@ -2,6 +2,10 @@ import type { BillingService, SubscriptionChangePreview } from './contracts';
 import { userService } from './userService';
 import { storageService } from './storageService';
 import type { UserPlan } from '@/types';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { FIRESTORE_COLLECTIONS, getFirebaseFirestoreInstance, isFirebaseBackendEnabled } from './firebase';
+import { wrapFirebaseError } from './firebaseError';
+import { toFirestoreSubscription } from './firestoreModels';
 
 type SubscriptionAuditEvent = {
   checkoutMode: 'mock';
@@ -42,6 +46,26 @@ function buildPreview(userId: string, currentPlan: UserPlan, nextPlan: UserPlan)
 
 export const subscriptionService: BillingService = {
   async getPlan(userId) {
+    if (isFirebaseBackendEnabled()) {
+      try {
+        const db = getFirebaseFirestoreInstance();
+
+        if (db) {
+          const snapshot = await getDoc(doc(db, FIRESTORE_COLLECTIONS.subscriptions, userId));
+
+          if (snapshot.exists()) {
+            const plan = snapshot.data().plan;
+
+            if (plan === 'Free' || plan === 'Silver' || plan === 'Gold') {
+              return plan;
+            }
+          }
+        }
+      } catch (error) {
+        wrapFirebaseError('Load Firestore subscription plan', error);
+      }
+    }
+
     const profile = await userService.getProfileById(userId);
     return profile?.plan ?? 'Free';
   },
@@ -55,6 +79,29 @@ export const subscriptionService: BillingService = {
     const currentPlan = await subscriptionService.getPlan(userId);
     const profile = await userService.updatePlan(userId, nextPlan);
     const updatedAt = new Date().toISOString();
+
+    if (isFirebaseBackendEnabled()) {
+      try {
+        const db = getFirebaseFirestoreInstance();
+
+        if (db) {
+          await setDoc(
+            doc(db, FIRESTORE_COLLECTIONS.subscriptions, userId),
+            toFirestoreSubscription(userId, currentPlan, nextPlan),
+            { merge: true }
+          );
+        }
+
+        return {
+          ...buildPreview(userId, currentPlan, nextPlan),
+          profile,
+          updatedAt
+        };
+      } catch (error) {
+        wrapFirebaseError('Save Firestore subscription', error);
+      }
+    }
+
     const store = await loadStore();
     const event: SubscriptionAuditEvent = {
       checkoutMode: 'mock',

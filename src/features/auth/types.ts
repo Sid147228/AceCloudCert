@@ -64,6 +64,8 @@ export type AuthErrorCode =
   | 'auth/email-already-in-use'
   | 'auth/invalid-credentials'
   | 'auth/invalid-email'
+  | 'auth/email-not-verified'
+  | 'auth/firebase-not-configured'
   | 'auth/not-initialized'
   | 'auth/terms-required'
   | 'auth/user-not-found'

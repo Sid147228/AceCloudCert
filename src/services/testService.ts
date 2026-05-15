@@ -1,4 +1,8 @@
 import type { TestAttempt, TestSession } from '@/features/tests';
+import { collection, doc, getDocs, orderBy, query, setDoc, where } from 'firebase/firestore';
+import { FIRESTORE_COLLECTIONS, getFirebaseFirestoreInstance, isFirebaseBackendEnabled } from './firebase';
+import { wrapFirebaseError } from './firebaseError';
+import { fromFirestoreTestAttempt, toFirestoreTestAttempt } from './firestoreModels';
 import { storageService } from './storageService';
 
 type TestStore = {
@@ -31,6 +35,27 @@ export const testService = {
   },
 
   async listAttempts(userId: string): Promise<readonly TestAttempt[]> {
+    if (isFirebaseBackendEnabled()) {
+      try {
+        const db = getFirebaseFirestoreInstance();
+
+        if (!db) {
+          return [];
+        }
+
+        const attemptsQuery = query(
+          collection(db, FIRESTORE_COLLECTIONS.testAttempts),
+          where('userId', '==', userId),
+          orderBy('completedAt', 'desc')
+        );
+        const snapshot = await getDocs(attemptsQuery);
+
+        return snapshot.docs.map((attempt) => fromFirestoreTestAttempt(attempt.id, attempt.data()));
+      } catch (error) {
+        wrapFirebaseError('List Firestore test attempts', error);
+      }
+    }
+
     const store = await loadStore();
     return store.attempts
       .filter((attempt) => attempt.userId === userId)
@@ -48,6 +73,25 @@ export const testService = {
   },
 
   async saveAttempt(attempt: TestAttempt): Promise<TestAttempt> {
+    if (isFirebaseBackendEnabled()) {
+      try {
+        const db = getFirebaseFirestoreInstance();
+
+        if (!db) {
+          return attempt;
+        }
+
+        await setDoc(
+          doc(db, FIRESTORE_COLLECTIONS.testAttempts, attempt.id),
+          toFirestoreTestAttempt(attempt),
+          { merge: true }
+        );
+        return attempt;
+      } catch (error) {
+        wrapFirebaseError('Save Firestore test attempt', error);
+      }
+    }
+
     const store = await loadStore();
     const attempts = [attempt, ...store.attempts.filter((storedAttempt) => storedAttempt.id !== attempt.id)].slice(0, 100);
 

@@ -4,17 +4,27 @@ export const serviceReadiness: readonly ServiceReadinessItem[] = [
   {
     name: 'Firebase Auth',
     purpose: 'Learner identity, password reset, email verification, and session persistence.',
-    requiredConfiguration: ['EXPO_PUBLIC_FIREBASE_API_KEY', 'EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN', 'EXPO_PUBLIC_FIREBASE_PROJECT_ID']
+    requiredConfiguration: [
+      'EXPO_PUBLIC_BACKEND_MODE=firebase',
+      'EXPO_PUBLIC_FIREBASE_API_KEY',
+      'EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN',
+      'EXPO_PUBLIC_FIREBASE_PROJECT_ID',
+      'EXPO_PUBLIC_FIREBASE_APP_ID'
+    ]
   },
   {
     name: 'Firestore',
     purpose: 'Profiles, attempts, progress, certificates, question metadata, and entitlement records.',
-    requiredConfiguration: ['Firestore security rules', 'Composite indexes for attempts and progress']
+    requiredConfiguration: [
+      'Collections: users, certifications, questions, testAttempts, certificates, subscriptions',
+      'Firestore security rules',
+      'Composite indexes for attempts and certificates'
+    ]
   },
   {
     name: 'Firebase Storage',
     purpose: 'Certificate exports and learner-owned downloadable assets.',
-    requiredConfiguration: ['Storage rules scoped by authenticated user id']
+    requiredConfiguration: ['EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET', 'Storage rules scoped by authenticated user id']
   },
   {
     name: 'Stripe Billing',

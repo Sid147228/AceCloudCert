@@ -69,7 +69,15 @@ import {
 } from '@/features/subscriptions';
 import { ROUTE_LABELS, ROUTE_META, getBreadcrumbs, getNavigationRoute, isProtectedRoute } from '@/app/navigation';
 import { useAppNavigation } from '@/hooks';
-import { adminService, analyticsService, certificateService, serviceReadiness, storageService, testService } from '@/services';
+import {
+  adminService,
+  analyticsService,
+  certificateService,
+  getFirebaseBackendStatus,
+  serviceReadiness,
+  storageService,
+  testService
+} from '@/services';
 import type {
   AppRoute,
   CertificateRecord,
@@ -128,7 +136,14 @@ export default function AceCloudCertApp() {
 function AceCloudCertRoutes() {
   const { activeRoute, navigate: setActiveRoute } = useAppNavigation(APP_ROUTES.landing);
   const { isAuthenticated, isInitializing, logout, status, user } = useAuth();
-  const { addCertificateHistoryItem, addLearningHistoryItem, isProfileLoading, profile, updatePlan } = useUserProfile();
+  const {
+    addCertificateHistoryItem,
+    addLearningHistoryItem,
+    errorMessage: profileErrorMessage,
+    isProfileLoading,
+    profile,
+    updatePlan
+  } = useUserProfile();
   const [redirectAfterLogin, setRedirectAfterLogin] = useState<AppRoute>(APP_ROUTES.dashboard);
   const [activeTestTab, setActiveTestTab] = useState('overview');
   const [selectedSubscriptionPlan, setSelectedSubscriptionPlan] = useState<UserPlan>('Silver');
@@ -158,6 +173,7 @@ function AceCloudCertRoutes() {
   const [cookieConsentLoaded, setCookieConsentLoaded] = useState(false);
   const [cookieNotice, setCookieNotice] = useState<string | null>(null);
   const [adminSnapshot, setAdminSnapshot] = useState<AdminSnapshot | null>(null);
+  const [workspaceErrorMessage, setWorkspaceErrorMessage] = useState<string | null>(null);
 
   const domainCounts = useMemo(() => countQuestionsByDomain(questionBank), []);
   const selectedCertification =
@@ -210,28 +226,35 @@ function AceCloudCertRoutes() {
     const currentUserId = user.id;
 
     async function loadTestState() {
-      const [storedSession, storedAttempts, storedAnalytics, storedCertificates] = await Promise.all([
-        testService.getActiveSession(currentUserId),
-        testService.listAttempts(currentUserId),
-        analyticsService.getTestAnalytics(currentUserId),
-        certificateService.listCertificates(currentUserId)
-      ]);
+      try {
+        const [storedSession, storedAttempts, storedAnalytics, storedCertificates] = await Promise.all([
+          testService.getActiveSession(currentUserId),
+          testService.listAttempts(currentUserId),
+          analyticsService.getTestAnalytics(currentUserId),
+          certificateService.listCertificates(currentUserId)
+        ]);
 
-      if (!active) {
-        return;
-      }
+        if (!active) {
+          return;
+        }
 
-      setActiveTestSession(storedSession);
-      setTestAnalytics(storedAnalytics);
-      setTestAttempts(storedAttempts);
-      setCertificateRecords(storedCertificates);
-      setLatestAttempt(storedAttempts[0] ?? null);
-      setSelectedCertificateId(storedCertificates[0]?.id ?? null);
+        setWorkspaceErrorMessage(null);
+        setActiveTestSession(storedSession);
+        setTestAnalytics(storedAnalytics);
+        setTestAttempts(storedAttempts);
+        setCertificateRecords(storedCertificates);
+        setLatestAttempt(storedAttempts[0] ?? null);
+        setSelectedCertificateId(storedCertificates[0]?.id ?? null);
 
-      if (storedSession) {
-        setSelectedTestMode(storedSession.mode);
-        if (storedSession.domain) {
-          setSelectedTestDomain(storedSession.domain);
+        if (storedSession) {
+          setSelectedTestMode(storedSession.mode);
+          if (storedSession.domain) {
+            setSelectedTestDomain(storedSession.domain);
+          }
+        }
+      } catch (error) {
+        if (active) {
+          setWorkspaceErrorMessage(error instanceof Error ? error.message : 'Unable to load workspace data.');
         }
       }
     }
@@ -252,10 +275,17 @@ function AceCloudCertRoutes() {
     let active = true;
 
     async function loadAdminSnapshot() {
-      const snapshot = await adminService.getDashboardSnapshot();
+      try {
+        const snapshot = await adminService.getDashboardSnapshot();
 
-      if (active) {
-        setAdminSnapshot(snapshot);
+        if (active) {
+          setWorkspaceErrorMessage(null);
+          setAdminSnapshot(snapshot);
+        }
+      } catch (error) {
+        if (active) {
+          setWorkspaceErrorMessage(error instanceof Error ? error.message : 'Unable to load admin data.');
+        }
       }
     }
 
@@ -705,6 +735,13 @@ function AceCloudCertRoutes() {
       routeLabels={ROUTE_LABELS}
     >
       {activeRoute !== APP_ROUTES.landing ? <RouteHeading navigate={navigate} route={activeRoute} /> : null}
+      {workspaceErrorMessage || profileErrorMessage ? (
+        <ToastNotification
+          message={workspaceErrorMessage ?? profileErrorMessage ?? 'Unable to load workspace data.'}
+          title="Backend data error"
+          tone="error"
+        />
+      ) : null}
       {cookieConsentLoaded && !cookieConsentPreference ? (
         <CookieConsentBanner
           navigate={navigate}
@@ -2870,6 +2907,8 @@ function SubscriptionPage({
 }
 
 function AdminDashboardPage({ navigate, snapshot }: NavigationProps & { snapshot: AdminSnapshot }) {
+  const firebaseStatus = getFirebaseBackendStatus();
+
   return (
     <Section
       eyebrow="Admin"
@@ -2877,8 +2916,8 @@ function AdminDashboardPage({ navigate, snapshot }: NavigationProps & { snapshot
       title="Admin dashboard"
     >
       <ToastNotification
-        message="Admin mode is local and role-gated. Production access should come from backend custom claims and audited security rules."
-        title="Admin access"
+        message={`${firebaseStatus.reason} Firestore collections are modeled for users, certifications, questions, testAttempts, certificates, and subscriptions.`}
+        title={`Backend mode: ${firebaseStatus.mode}`}
         tone="info"
       />
 

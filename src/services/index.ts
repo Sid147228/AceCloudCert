@@ -1,9 +1,24 @@
 export type { AnalyticsService } from './analyticsService';
-export type { AdminService, AuthService, BillingService, CertificateService, ProgressService, UserService } from './contracts';
+export type {
+  AdminService,
+  AuthService,
+  BillingService,
+  CertificateService,
+  ContentService,
+  ProgressService,
+  UserService
+} from './contracts';
 export { adminService } from './adminService';
 export { analyticsService } from './analyticsService';
 export { authService, getAuthErrorMessage } from './authService';
 export { certificateService } from './certificateService';
+export { contentService } from './contentService';
+export {
+  FIRESTORE_COLLECTIONS,
+  getFirebaseBackendStatus,
+  getFirebaseFirestoreInstance,
+  isFirebaseBackendEnabled
+} from './firebase';
 export { serviceReadiness } from './readiness';
 export { storageService } from './storageService';
 export { subscriptionService } from './subscriptionService';

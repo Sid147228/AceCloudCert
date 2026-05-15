@@ -1,5 +1,5 @@
 import { LOCAL_MOCK_ADMIN_EMAIL } from '@/constants/admin';
-import { certifications, knowledgeTopics, questionBank } from '@/data';
+import { knowledgeTopics } from '@/data';
 import type {
   AdminAnalyticsRow,
   AdminCertificationRow,
@@ -9,8 +9,13 @@ import type {
   AdminUserRow
 } from '@/features/admin';
 import type { AdminService } from './contracts';
+import { contentService } from './contentService';
+import type { Certification, Question } from '@/types';
 
-function buildCertificationRows(): readonly AdminCertificationRow[] {
+function buildCertificationRows(
+  certifications: readonly Certification[],
+  questionBank: readonly Question[]
+): readonly AdminCertificationRow[] {
   return certifications.map((certification) => {
     const certificationQuestions = questionBank.filter((question) => question.certificationId === certification.id);
     const certificationTopics = knowledgeTopics.filter((topic) => topic.certificationId === certification.id);
@@ -29,7 +34,7 @@ function buildCertificationRows(): readonly AdminCertificationRow[] {
   });
 }
 
-function buildQuestionRows(): readonly AdminQuestionRow[] {
+function buildQuestionRows(questionBank: readonly Question[]): readonly AdminQuestionRow[] {
   return questionBank.map((question) => ({
     certificationId: question.certificationId,
     difficulty: question.difficulty,
@@ -105,9 +110,13 @@ function buildAnalyticsRows(): readonly AdminAnalyticsRow[] {
   ];
 }
 
-function buildSnapshot(): AdminSnapshot {
-  const certificationRows = buildCertificationRows();
-  const questionRows = buildQuestionRows();
+async function buildSnapshot(): Promise<AdminSnapshot> {
+  const [certifications, questions] = await Promise.all([
+    contentService.listCertifications(),
+    contentService.listQuestions()
+  ]);
+  const certificationRows = buildCertificationRows(certifications, questions);
+  const questionRows = buildQuestionRows(questions);
   const knowledgeTopicRows = buildKnowledgeTopicRows();
   const premiumQuestions = questionRows.filter((question) => question.isPremium).length;
   const activeCertifications = certificationRows.filter((certification) => certification.status === 'active').length;

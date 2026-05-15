@@ -1,4 +1,4 @@
-import type { AttemptSummary, CertificateRecord, UserPlan } from '@/types';
+import type { AttemptSummary, CertificateRecord, Certification, Question, UserPlan } from '@/types';
 import type { AdminSnapshot } from '@/features/admin';
 import type { AuthUser } from '@/features/auth';
 import type {
@@ -36,6 +36,11 @@ export type CertificateService = {
   getCertificateForAttempt: (userId: string, attemptId: string) => Promise<CertificateRecord | null>;
   listCertificates: (userId: string) => Promise<readonly CertificateRecord[]>;
   saveCertificate: (certificate: CertificateRecord) => Promise<CertificateRecord>;
+};
+
+export type ContentService = {
+  listCertifications: () => Promise<readonly Certification[]>;
+  listQuestions: () => Promise<readonly Question[]>;
 };
 
 export type AdminService = {
