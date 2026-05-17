@@ -126,6 +126,93 @@ const serviceColumns: readonly TableColumn<ServiceReadinessItem>[] = [
   }
 ];
 
+const landingProviders = [
+  { name: 'AWS', status: 'Active', summary: 'Cloud Practitioner, Solutions Architect, Developer' },
+  { name: 'Microsoft Azure', status: 'Next', summary: 'Fundamentals, Administrator, Architect' },
+  { name: 'Google Cloud', status: 'Planned', summary: 'Digital Leader, Associate Cloud Engineer' },
+  { name: 'Salesforce', status: 'Planned', summary: 'Administrator and Platform App Builder' },
+  { name: 'Cisco', status: 'Roadmap', summary: 'CCNA, CyberOps, and cloud networking foundations' },
+  { name: 'Kubernetes', status: 'Roadmap', summary: 'KCNA, CKA readiness, and cluster basics' }
+] as const;
+
+const landingFeatures = [
+  {
+    title: 'Readiness dashboard',
+    copy: 'Score trends, streaks, weak domains, and next actions make every study session measurable.'
+  },
+  {
+    title: 'Domain analytics',
+    copy: 'Learners see exactly where to revise across cloud concepts, security, billing, support, and architecture.'
+  },
+  {
+    title: 'Adaptive practice',
+    copy: 'Move from topic lessons to targeted quizzes and full mocks without losing study context.'
+  },
+  {
+    title: 'Team-ready paths',
+    copy: 'Structured certification journeys help managers guide onboarding cohorts and cloud enablement plans.'
+  },
+  {
+    title: 'Plan entitlements',
+    copy: 'Free, Silver, and Gold tiers make the upgrade path clear for serious learners and teams.'
+  },
+  {
+    title: 'Proof of progress',
+    copy: 'Passing attempts can become branded certificate records with candidate details and share-ready messaging.'
+  }
+] as const;
+
+const landingMockExamHighlights = [
+  'Timed full mock exams that mirror real certification pressure.',
+  'Quick quizzes for focused revision between study blocks.',
+  'Topic-wise practice by domain, difficulty, subdomain, and tagged objective.',
+  'Review flags, unanswered states, pass-mark guidance, and result breakdowns.'
+] as const;
+
+const landingTestimonials = [
+  {
+    name: 'Priya S.',
+    role: 'AWS foundational learner',
+    quote:
+      'AceCloudCert makes revision feel intentional. I can see weak areas after each attempt and decide what to study next instead of guessing.'
+  },
+  {
+    name: 'Marcus L.',
+    role: 'Cloud enablement lead',
+    quote:
+      'The flow from knowledge topics into timed practice is exactly what our junior engineers need before they sit a cloud exam.'
+  },
+  {
+    name: 'Elena R.',
+    role: 'Technical training manager',
+    quote:
+      'The certificate milestone changes the psychology of training. Learners can see proof of progress, not just another quiz score.'
+  }
+] as const;
+
+const landingFaqs = [
+  {
+    question: 'Which certification paths are available first?',
+    answer:
+      'AWS Cloud Practitioner is the lead path, with AWS Solutions Architect, Azure, Google Cloud, Salesforce, Cisco, and Kubernetes structured for expansion.'
+  },
+  {
+    question: 'Can learners start without paying?',
+    answer:
+      'Yes. The Free plan is designed for instant exploration with starter content, sample questions, and basic progress visibility.'
+  },
+  {
+    question: 'Are mock exams included?',
+    answer:
+      'Yes. AceCloudCert supports quick quizzes, topic-wise practice, and full mock exams with timed sessions and review states.'
+  },
+  {
+    question: 'Can certificates be shared?',
+    answer:
+      'Passing attempts can generate certificate records and share-ready messaging. Export and public verification can be connected next.'
+  }
+] as const;
+
 export default function AceCloudCertApp() {
   return (
     <AuthProvider>
@@ -1070,51 +1157,313 @@ function LandingPage({ isAuthenticated, navigate }: NavigationProps & { isAuthen
   return (
     <>
       <View style={styles.landingHero}>
-        <Badge tone="primary">Enterprise cloud certification platform</Badge>
-        <Text style={styles.heroTitle}>{APP_NAME}</Text>
+        <View style={styles.landingHeroLogoRow}>
+          <Image source={logo} style={styles.landingHeroLogo} />
+          <View style={styles.stack}>
+            <Text style={styles.landingHeroBrand}>{APP_NAME}</Text>
+            <Text style={styles.microCopy}>Cloud certification readiness for modern teams</Text>
+          </View>
+        </View>
+        <Badge tone="info">Enterprise cloud certification platform</Badge>
+        <Text style={styles.landingHeroTitle}>Prepare smarter. Practice better. Certify with confidence.</Text>
         <Text style={styles.heroCopy}>
-          A mobile-first learning workspace for mock exams, topic quizzes, study paths, progress tracking, certificates,
-          subscriptions, and future Firebase and Stripe integrations.
+          AceCloudCert brings guided study, realistic mock exams, readiness analytics, and certificate milestones into
+          one polished platform for cloud career growth.
         </Text>
         <View style={styles.actions}>
           <PrimaryButton onPress={() => navigate(isAuthenticated ? APP_ROUTES.dashboard : APP_ROUTES.signup)}>
-            {isAuthenticated ? 'Open dashboard' : 'Start learning'}
+            Start Free
           </PrimaryButton>
-          <SecondaryButton onPress={() => navigate(APP_ROUTES.pricing)}>View pricing</SecondaryButton>
-          <SecondaryButton onPress={() => navigate(isAuthenticated ? APP_ROUTES.tests : APP_ROUTES.login)}>
-            {isAuthenticated ? 'Start mock test' : 'Login'}
+          <SecondaryButton onPress={() => navigate(isAuthenticated ? APP_ROUTES.certifications : APP_ROUTES.login)}>
+            View Certifications
           </SecondaryButton>
+          <SecondaryButton onPress={() => navigate(APP_ROUTES.pricing)}>See Pricing</SecondaryButton>
         </View>
       </View>
 
       <View style={styles.metricGrid}>
-        <StatCard label="Primary path" value="AWS CCP" />
-        <StatCard label="Exam pass mark" value={formatPercent(PASS_MARK_PERCENT)} />
-        <StatCard label="Question domains" value={Object.keys(countQuestionsByDomain(questionBank)).length} />
+        <StatCard label="Exam-style questions" value={formatCount(questionBank.length, 'question')} />
+        <StatCard label="Practice modes" value="3" />
+        <StatCard label="Provider roadmap" value={landingProviders.length} />
+        <StatCard label="Pass mark preview" value={formatPercent(PASS_MARK_PERCENT)} />
       </View>
 
-      <View style={styles.cardGrid}>
-        <RouteCard
-          badge="Learn"
-          copy="Topic-led study paths for cloud concepts, AWS infrastructure, IAM, billing, and support."
-          onPress={() => navigate(isAuthenticated ? APP_ROUTES.knowledgeBase : APP_ROUTES.login)}
-          title="Knowledge base"
-        />
-        <RouteCard
-          badge="Practice"
-          copy="Dedicated routes for mock exams, quick quizzes, results, and answer review."
-          onPress={() => navigate(isAuthenticated ? APP_ROUTES.tests : APP_ROUTES.login)}
-          title="Test engine"
-        />
-        <RouteCard
-          badge="Proof"
-          copy="Certificate history and certificate detail routes are ready for the achievement module."
-          onPress={() => navigate(isAuthenticated ? APP_ROUTES.certificates : APP_ROUTES.login)}
-          title="Certificates"
-        />
+      <LandingSection
+        eyebrow="App preview"
+        subtitle="A command center for repeated use: readiness, practice, review, certificates, and plan-aware progress."
+        title="Built for certification readiness"
+      >
+        <View style={styles.landingPreviewShell}>
+          <View style={styles.landingPreviewHeader}>
+            <View style={styles.landingPreviewBrand}>
+              <Image source={logo} style={styles.landingPreviewLogo} />
+              <View style={styles.stack}>
+                <Text style={styles.cardTitle}>AceCloudCert</Text>
+                <Text style={styles.microCopy}>Certification readiness workspace</Text>
+              </View>
+            </View>
+            <Badge tone="success">Live readiness</Badge>
+          </View>
+          <View style={styles.landingPreviewGrid}>
+            <AppCard style={styles.landingPreviewPanel}>
+              <Badge tone="info">Readiness score</Badge>
+              <Text style={styles.landingReadinessScore}>82%</Text>
+              <ProgressBar value={82} />
+              <Text style={styles.copy}>Strong in cloud concepts. Review billing and compliance before the next mock.</Text>
+            </AppCard>
+            <AppCard style={styles.landingPreviewPanel}>
+              <Badge tone="primary">Mock exam question</Badge>
+              <Text style={styles.questionText}>Which service helps forecast monthly cloud spend?</Text>
+              <View style={styles.optionList}>
+                <Text style={styles.landingAnswerOption}>AWS Budgets</Text>
+                <Text style={[styles.landingAnswerOption, styles.landingAnswerSelected]}>AWS Cost Explorer</Text>
+                <Text style={styles.landingAnswerOption}>AWS CloudTrail</Text>
+              </View>
+            </AppCard>
+            <AppCard style={styles.landingPreviewPanel}>
+              <Badge tone="info">Domain progress</Badge>
+              <View style={styles.domainList}>
+                {[
+                  ['Security', 88],
+                  ['Billing', 67],
+                  ['Architecture', 79]
+                ].map(([label, value]) => (
+                  <View key={label} style={styles.domainRow}>
+                    <View style={styles.row}>
+                      <Text style={styles.copyStrong}>{label}</Text>
+                      <Text style={styles.referenceText}>{value}%</Text>
+                    </View>
+                    <ProgressBar value={Number(value)} />
+                  </View>
+                ))}
+              </View>
+            </AppCard>
+          </View>
+        </View>
+      </LandingSection>
+
+      <LandingSection
+        eyebrow="Certification providers"
+        subtitle="Start with AWS and grow into a multi-provider catalog with clear paths for individual learners and teams."
+        title="Cloud credentials learners actually chase"
+      >
+        <View style={styles.cardGrid}>
+          {landingProviders.map((provider) => (
+            <AppCard key={provider.name} style={styles.landingProviderCard}>
+              <Badge tone={provider.status === 'Active' ? 'success' : 'info'}>{provider.status}</Badge>
+              <Text style={styles.cardTitle}>{provider.name}</Text>
+              <Text style={styles.copy}>{provider.summary}</Text>
+            </AppCard>
+          ))}
+        </View>
+      </LandingSection>
+
+      <LandingSection
+        eyebrow="Features"
+        subtitle="Every surface reduces uncertainty: what to study, when to test, and whether the learner is ready to book."
+        title="Convert casual practice into confident readiness"
+      >
+        <View style={styles.cardGrid}>
+          {landingFeatures.map((feature, index) => (
+            <AppCard key={feature.title} style={styles.landingFeatureCard}>
+              <Text style={styles.referenceText}>{String(index + 1).padStart(2, '0')}</Text>
+              <Text style={styles.cardTitle}>{feature.title}</Text>
+              <Text style={styles.copy}>{feature.copy}</Text>
+            </AppCard>
+          ))}
+        </View>
+      </LandingSection>
+
+      <LandingSection
+        eyebrow="Mock exams"
+        subtitle="Practice moves beyond passive reading with timed pressure, review discipline, and clear result analysis."
+        title="Practice that feels close to exam day"
+      >
+        <View style={styles.landingSplit}>
+          <AppCard style={styles.landingNarrativeCard}>
+            {landingMockExamHighlights.map((item) => (
+              <Text key={item} style={styles.copyStrong}>
+                - {item}
+              </Text>
+            ))}
+            <PrimaryButton onPress={() => navigate(isAuthenticated ? APP_ROUTES.tests : APP_ROUTES.login)}>
+              Start Mock Exam
+            </PrimaryButton>
+          </AppCard>
+          <AppCard style={styles.landingNarrativeCard}>
+            <View style={styles.row}>
+              <Badge tone="success">Full mock</Badge>
+              <Text style={styles.timerText}>64:48</Text>
+            </View>
+            <Text style={styles.cardTitle}>AWS Cloud Practitioner readiness exam</Text>
+            <View style={styles.badgeRow}>
+              <Badge tone="info">65 questions</Badge>
+              <Badge tone="info">70% pass mark</Badge>
+              <Badge tone="primary">Marked review</Badge>
+            </View>
+            <View style={styles.navigator}>
+              {Array.from({ length: 20 }).map((_, index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.navigatorItem,
+                    index < 12 && styles.navigatorAnswered,
+                    index === 14 && styles.navigatorMarked
+                  ]}
+                >
+                  <Text style={styles.navigatorText}>{index + 1}</Text>
+                </View>
+              ))}
+            </View>
+          </AppCard>
+        </View>
+      </LandingSection>
+
+      <LandingSection
+        eyebrow="Knowledge base"
+        subtitle="Learners review the concept, understand why it matters, then launch related practice without losing momentum."
+        title="Concise lessons connected directly to practice"
+      >
+        <View style={styles.cardGrid}>
+          {[
+            {
+              copy:
+                'Service models, global infrastructure, shared responsibility, and resilient architecture basics.',
+              title: 'Cloud concepts'
+            },
+            {
+              copy: 'Identity, encryption, governance, monitoring, and risk-aware patterns explained clearly.',
+              title: 'Security and compliance'
+            },
+            {
+              copy:
+                'Cost controls, support plans, calculators, budgets, and optimization habits that show up in exams.',
+              title: 'Billing and pricing'
+            }
+          ].map(({ copy, title }) => (
+            <RouteCard
+              badge="Learn"
+              copy={copy}
+              key={title}
+              onPress={() => navigate(isAuthenticated ? APP_ROUTES.knowledgeBase : APP_ROUTES.login)}
+              title={title}
+            />
+          ))}
+        </View>
+      </LandingSection>
+
+      <LandingSection
+        eyebrow="Certificates"
+        subtitle="Certification prep feels more complete when passing practice creates a branded record of achievement."
+        title="Give learners a milestone they can show"
+      >
+        <View style={styles.landingSplit}>
+          <AppCard style={styles.landingNarrativeCard}>
+            {[
+              'Candidate name, certification path, score, issue date, and certificate ID.',
+              'Premium branded certificate preview for learner milestones and portfolio proof.',
+              'LinkedIn-ready copy and export-friendly architecture for the next release.'
+            ].map((item) => (
+              <Text key={item} style={styles.copyStrong}>
+                - {item}
+              </Text>
+            ))}
+            <PrimaryButton onPress={() => navigate(isAuthenticated ? APP_ROUTES.certificates : APP_ROUTES.login)}>
+              View Certificates
+            </PrimaryButton>
+          </AppCard>
+          <View style={styles.landingCertificate}>
+            <View style={styles.landingCertificateInner}>
+              <Image source={logo} style={styles.certificateLogo} />
+              <Text style={styles.certificateEyebrow}>Certificate of readiness</Text>
+              <Text style={styles.landingCertificateName}>Jamie Morgan</Text>
+              <Text style={styles.landingCertificateProgram}>AWS Certified Cloud Practitioner Prep</Text>
+              <Text style={styles.certificateScore}>Score 86%</Text>
+            </View>
+          </View>
+        </View>
+      </LandingSection>
+
+      <LandingSection
+        eyebrow="Pricing preview"
+        subtitle="Start free, then unlock deeper practice loops and certificate workflows when learners are ready to commit."
+        title="Simple plans with an obvious upgrade path"
+      >
+        <View style={styles.cardGrid}>
+          {subscriptionPlans.slice(0, 3).map((plan) => (
+            <AppCard key={plan.id} style={[styles.landingPricingCard, plan.tier === 'Silver' && styles.currentPlanCard]}>
+              <Badge tone={plan.tier === 'Silver' ? 'success' : 'info'}>{plan.tier}</Badge>
+              <Text style={styles.price}>{plan.priceLabel}</Text>
+              <Text style={styles.copy}>{plan.description}</Text>
+              <PrimaryButton onPress={() => navigate(APP_ROUTES.pricing)}>
+                {plan.tier === 'Free' ? 'Start Free' : 'See Pricing'}
+              </PrimaryButton>
+            </AppCard>
+          ))}
+        </View>
+      </LandingSection>
+
+      <LandingSection
+        eyebrow="Testimonials"
+        subtitle="Placeholder copy is written for learner, team lead, and training manager feedback until production quotes are ready."
+        title="Realistic feedback for the buyers you want"
+      >
+        <View style={styles.cardGrid}>
+          {landingTestimonials.map((testimonial) => (
+            <AppCard key={testimonial.name} style={styles.landingTestimonialCard}>
+              <Text style={styles.landingQuote}>"{testimonial.quote}"</Text>
+              <View>
+                <Text style={styles.copyStrong}>{testimonial.name}</Text>
+                <Text style={styles.copy}>{testimonial.role}</Text>
+              </View>
+            </AppCard>
+          ))}
+        </View>
+      </LandingSection>
+
+      <LandingSection
+        eyebrow="FAQ"
+        subtitle="Remove friction before a visitor clicks into signup, certifications, or pricing."
+        title="Answers for learners, teams, and buyers"
+      >
+        <View style={styles.cardGrid}>
+          {landingFaqs.map((faq) => (
+            <AppCard key={faq.question} style={styles.flexCard}>
+              <Text style={styles.cardTitle}>{faq.question}</Text>
+              <Text style={styles.copy}>{faq.answer}</Text>
+            </AppCard>
+          ))}
+        </View>
+      </LandingSection>
+
+      <View style={styles.landingFinalCta}>
+        <Badge tone="success">Start building certification confidence today</Badge>
+        <Text style={styles.landingFinalTitle}>Give learners a smarter way to prepare before they pay for the exam.</Text>
+        <Text style={styles.heroCopy}>
+          Launch the free path, explore provider tracks, and see how AceCloudCert turns practice data into confident next steps.
+        </Text>
+        <View style={styles.actions}>
+          <PrimaryButton onPress={() => navigate(isAuthenticated ? APP_ROUTES.dashboard : APP_ROUTES.signup)}>
+            Start Free
+          </PrimaryButton>
+          <SecondaryButton onPress={() => navigate(isAuthenticated ? APP_ROUTES.certifications : APP_ROUTES.login)}>
+            View Certifications
+          </SecondaryButton>
+          <SecondaryButton onPress={() => navigate(APP_ROUTES.pricing)}>See Pricing</SecondaryButton>
+        </View>
       </View>
+
       <LegalLinksFooter navigate={navigate} />
     </>
+  );
+}
+
+function LandingSection({ children, eyebrow, subtitle, title }: SectionProps) {
+  return (
+    <View style={styles.landingSection}>
+      <SectionHeader eyebrow={eyebrow} subtitle={subtitle} title={title} />
+      {children}
+    </View>
   );
 }
 
@@ -3589,6 +3938,193 @@ const styles = StyleSheet.create({
   landingHero: {
     gap: theme.spacing.lg,
     paddingVertical: theme.spacing.xxl
+  },
+  landingHeroBrand: {
+    color: theme.colors.text,
+    fontSize: 22,
+    fontWeight: '900',
+    lineHeight: 28
+  },
+  landingHeroLogo: {
+    borderRadius: theme.radii.md,
+    height: 58,
+    width: 58
+  },
+  landingHeroLogoRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.md
+  },
+  landingHeroTitle: {
+    color: theme.colors.text,
+    fontSize: 46,
+    fontWeight: '900',
+    lineHeight: 54,
+    maxWidth: 920
+  },
+  landingSection: {
+    gap: theme.spacing.md,
+    paddingTop: theme.spacing.xxl
+  },
+  landingPreviewShell: {
+    backgroundColor: '#0F172A',
+    borderColor: theme.colors.border,
+    borderRadius: theme.radii.md,
+    borderWidth: 1,
+    gap: theme.spacing.md,
+    overflow: 'hidden',
+    padding: theme.spacing.lg
+  },
+  landingPreviewHeader: {
+    alignItems: 'center',
+    borderBottomColor: theme.colors.border,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.md,
+    justifyContent: 'space-between',
+    paddingBottom: theme.spacing.md
+  },
+  landingPreviewBrand: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm
+  },
+  landingPreviewLogo: {
+    borderRadius: theme.radii.md,
+    height: 42,
+    width: 42
+  },
+  landingPreviewGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.md
+  },
+  landingPreviewPanel: {
+    flexBasis: 280,
+    flexGrow: 1,
+    flexShrink: 1,
+    gap: theme.spacing.md
+  },
+  landingReadinessScore: {
+    color: theme.colors.text,
+    fontSize: 52,
+    fontWeight: '900',
+    lineHeight: 58
+  },
+  landingAnswerOption: {
+    backgroundColor: theme.colors.card,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radii.md,
+    borderWidth: 1,
+    color: theme.colors.text,
+    fontSize: 14,
+    fontWeight: '800',
+    lineHeight: 20,
+    padding: theme.spacing.md
+  },
+  landingAnswerSelected: {
+    backgroundColor: 'rgba(34, 197, 94, 0.16)',
+    borderColor: theme.colors.success
+  },
+  landingProviderCard: {
+    flexBasis: 260,
+    flexGrow: 1,
+    flexShrink: 1,
+    minHeight: 170
+  },
+  landingFeatureCard: {
+    flexBasis: 280,
+    flexGrow: 1,
+    flexShrink: 1,
+    minHeight: 180
+  },
+  landingSplit: {
+    alignItems: 'stretch',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.md
+  },
+  landingNarrativeCard: {
+    flexBasis: 300,
+    flexGrow: 1,
+    flexShrink: 1,
+    gap: theme.spacing.md
+  },
+  landingCertificate: {
+    backgroundColor: '#E5E7EB',
+    borderColor: theme.colors.border,
+    borderRadius: theme.radii.md,
+    borderWidth: 1,
+    flexBasis: 320,
+    flexGrow: 1,
+    flexShrink: 1,
+    padding: theme.spacing.md
+  },
+  landingCertificateInner: {
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderColor: '#047857',
+    borderRadius: theme.radii.md,
+    borderWidth: 6,
+    gap: theme.spacing.md,
+    padding: theme.spacing.xl
+  },
+  landingCertificateName: {
+    borderBottomColor: '#047857',
+    borderBottomWidth: 2,
+    color: '#111827',
+    fontSize: 30,
+    fontWeight: '900',
+    lineHeight: 38,
+    maxWidth: 560,
+    paddingBottom: theme.spacing.xs,
+    textAlign: 'center',
+    width: '100%'
+  },
+  landingCertificateProgram: {
+    color: '#111827',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 25,
+    textAlign: 'center'
+  },
+  landingPricingCard: {
+    flexBasis: 260,
+    flexGrow: 1,
+    flexShrink: 1,
+    gap: theme.spacing.md
+  },
+  landingTestimonialCard: {
+    flexBasis: 280,
+    flexGrow: 1,
+    flexShrink: 1,
+    justifyContent: 'space-between',
+    minHeight: 220
+  },
+  landingQuote: {
+    color: theme.colors.text,
+    fontSize: 16,
+    fontWeight: '800',
+    lineHeight: 24
+  },
+  landingFinalCta: {
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.success,
+    borderRadius: theme.radii.md,
+    borderWidth: 1,
+    gap: theme.spacing.lg,
+    marginTop: theme.spacing.xxl,
+    padding: theme.spacing.xl
+  },
+  landingFinalTitle: {
+    color: theme.colors.text,
+    fontSize: 34,
+    fontWeight: '900',
+    lineHeight: 40,
+    maxWidth: 820
   },
   legalFooter: {
     borderColor: theme.colors.border,
