@@ -1,19 +1,36 @@
 {
   "name": "frontend",
   "version": "1.0.0",
-  "description": "Frontend for AceCloudCert",
-  "main": "index.js",
+  "description": "Enterprise SaaS foundation for AceCloudCert",
+  "private": true,
   "dependencies": {
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.468.0",
     "next": "^16.2.6",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "radix-ui": "^1.4.3",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tailwind-merge": "^2.6.0"
   },
   "overrides": {
     "postcss": "^8.5.10"
   },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/node": "^22.19.18",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.39.2",
+    "eslint-config-next": "^16.2.6",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.9.3"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "lint": "eslint",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
   }
 }

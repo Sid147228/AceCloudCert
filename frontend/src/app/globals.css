@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+
+  --color-background: #0B1220;
+  --color-foreground: #FFFFFF;
+  --color-card: #1F2937;
+  --color-card-foreground: #FFFFFF;
+  --color-popover: #111827;
+  --color-popover-foreground: #FFFFFF;
+  --color-primary: #FF8C00;
+  --color-primary-foreground: #0B1220;
+  --color-secondary: #111827;
+  --color-secondary-foreground: #FFFFFF;
+  --color-muted: #111827;
+  --color-muted-foreground: #9CA3AF;
+  --color-accent: #38BDF8;
+  --color-accent-foreground: #0B1220;
+  --color-destructive: #EF4444;
+  --color-border: #2D3748;
+  --color-input: #2D3748;
+  --color-ring: #38BDF8;
+  --color-success: #22C55E;
+  --color-surface: #111827;
+  --radius: 0.5rem;
+  --radius-xs: calc(var(--radius) * 0.5);
+  --radius-sm: calc(var(--radius) * 0.75);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.5);
+}
+
+* {
+  border-color: var(--color-border);
+  letter-spacing: 0;
+}
+
+html {
+  background: var(--color-background);
+  color: var(--color-foreground);
+}
+
+body {
+  min-width: 320px;
+  overflow-x: hidden;
+  background:
+    linear-gradient(180deg, rgba(56, 189, 248, 0.08), transparent 420px),
+    radial-gradient(circle at 16% 0%, rgba(255, 140, 0, 0.14), transparent 340px),
+    var(--color-background);
+  color: var(--color-foreground);
+  text-rendering: geometricPrecision;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(255, 140, 0, 0.35);
+}
+
+.enterprise-grid {
+  background-image:
+    linear-gradient(rgba(156, 163, 175, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(156, 163, 175, 0.05) 1px, transparent 1px);
+  background-size: 36px 36px;
+}
+
+.panel-depth {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 24px 70px rgba(0, 0, 0, 0.32);
+}

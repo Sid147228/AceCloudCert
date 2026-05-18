@@ -2,7 +2,9 @@ node_modules
 .next
 .expo
 .expo-shared
+.vercel
 .env
 dist
 .DS_Store
 *.log
+*.tsbuildinfo
