@@ -76,3 +76,20 @@ textarea {
     0 1px 0 rgba(255, 255, 255, 0.05) inset,
     0 24px 70px rgba(0, 0, 0, 0.32);
 }
+
+@keyframes landing-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .landing-float {
+    animation: landing-float 8s ease-in-out infinite;
+  }
+}

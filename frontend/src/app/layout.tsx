@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AceCloudCert | Enterprise SaaS Foundation",
+  title: "AceCloudCert | Cloud Certification Readiness",
   description:
-    "Enterprise-grade Next.js foundation for AceCloudCert: design system, layouts, navigation, and reusable components.",
+    "Prepare for AWS, Azure, GCP, Salesforce, and Cisco certifications with premium mock exams, analytics, and learning tools.",
   icons: {
     icon: "/favicon.png"
   }
